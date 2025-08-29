@@ -151,13 +151,28 @@ gcc -Wall -Wextra -std=c99 -g -o mini_script mini_script.c
 ```
 
 ### Running
-```bash
-# On Unix/Linux/macOS
-./mini_script
 
-# On Windows
-mini_script.exe
+Run script files with command-line arguments:
+
+```bash
+# Run a script file
+.\mini_script.exe script.ms
+
+# Show help information  
+.\mini_script.exe -h
+
+# Run built-in examples
+.\mini_script.exe -examples
 ```
+
+#### Command Line Options
+- `script_file` - Path to Mini Script file to execute (.ms extension recommended)
+- `-h, --help` - Show help message with usage information  
+- `-examples` - Run built-in example demonstrations
+
+#### File Extensions
+- `.ms` - Mini Script files (recommended)
+- `.txt` - Plain text script files
 
 ## Implementation Details
 
@@ -178,9 +193,38 @@ The interpreter is implemented as a single C file (`mini_script.c`) and includes
 ### Current Limitations
 - User-defined functions are parsed but not fully implemented
 - Maps are defined but not fully functional
+- DLL function calling is designed but needs implementation completion
 - Limited error recovery
 - No garbage collection
 - Single-threaded execution only
+
+## Planned Features
+
+### DLL Support (Windows)
+The interpreter includes a planned framework for calling external Windows DLL functions:
+
+```javascript
+// Load a Windows DLL
+dll_handle = loadlib("User32.dll");
+
+// Get function address
+msgbox_func = getproc("User32.dll", "MessageBoxA");
+
+// Call external function
+result = callext("MessageBoxA", 0, "Hello from Script!", "Message", 0);
+
+// Cleanup
+freelib("User32.dll");
+```
+
+This would enable scripts to:
+- Call Windows API functions
+- Display message boxes
+- Access system information
+- Perform file operations
+- Interface with any Windows DLL
+
+See `DLL_IMPLEMENTATION_GUIDE.md` for detailed implementation plans and `dll_demo.ms` for example usage.
 
 ## License
 

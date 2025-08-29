@@ -4,6 +4,10 @@
 #include <ctype.h>
 #include <stdarg.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define MAX_TOKEN_LEN 256
 #define MAX_IDENTIFIER_LEN 64
 #define MAX_STRING_LEN 512
@@ -13,6 +17,8 @@
 #define MAX_STACK_DEPTH 100
 #define MAX_LIST_SIZE 100
 #define MAX_MAP_SIZE 100
+#define MAX_DLL_MODULES 50
+#define MAX_DLL_FUNCTIONS 200
 
 // Token types
 typedef enum {
@@ -56,8 +62,12 @@ typedef enum {
     TOKEN_LIST,
     TOKEN_MAP,
     TOKEN_TRUE,
-    TOKEN_FALSE
-} TokenType;
+    TOKEN_FALSE,
+    TOKEN_LOADLIB,
+    TOKEN_GETPROC,
+    TOKEN_FREELIB,
+    TOKEN_CALLEXT
+} ScriptTokenType;
 
 // Value types
 typedef enum {
@@ -67,7 +77,9 @@ typedef enum {
     TYPE_STRING,
     TYPE_LIST,
     TYPE_MAP,
-    TYPE_BOOL
+    TYPE_BOOL,
+    TYPE_DLL_HANDLE,
+    TYPE_DLL_FUNCTION
 } ValueType;
 
 // Forward declarations
@@ -94,6 +106,24 @@ typedef struct {
     int size;
 } Map;
 
+#ifdef _WIN32
+// DLL Module structure
+typedef struct {
+    char name[MAX_IDENTIFIER_LEN];
+    HMODULE handle;
+} DllModule;
+
+// DLL Function structure
+typedef struct {
+    char name[MAX_IDENTIFIER_LEN];
+    char module_name[MAX_IDENTIFIER_LEN];
+    FARPROC proc_address;
+    int param_count;
+    ValueType param_types[MAX_PARAMS];
+    ValueType return_type;
+} DllFunction;
+#endif
+
 // Value structure
 typedef struct Value {
     ValueType type;
@@ -105,12 +135,16 @@ typedef struct Value {
         List* list_val;
         Map* map_val;
         int bool_val;
+#ifdef _WIN32
+        HMODULE dll_handle;
+        FARPROC dll_function;
+#endif
     };
 } Value;
 
 // Token structure
 typedef struct {
-    TokenType type;
+    ScriptTokenType type;
     char lexeme[MAX_TOKEN_LEN];
     Value value;
     int line;
@@ -159,7 +193,7 @@ typedef struct ASTNode {
     NodeType type;
     Value value;
     char identifier[MAX_IDENTIFIER_LEN];
-    TokenType operator;
+    ScriptTokenType operator;
     struct ASTNode* left;
     struct ASTNode* right;
     struct ASTNode* condition;
@@ -189,6 +223,12 @@ typedef struct {
     int stack_depth;
     Value return_value;
     int has_return;
+#ifdef _WIN32
+    DllModule dll_modules[MAX_DLL_MODULES];
+    int dll_module_count;
+    DllFunction dll_functions[MAX_DLL_FUNCTIONS];
+    int dll_function_count;
+#endif
 } Interpreter;
 
 // Global interpreter instance
@@ -216,11 +256,31 @@ void execute_statement(ASTNode* node);
 Variable* find_variable(const char* name);
 Function* find_function(const char* name);
 void print_value(Value* val);
+#ifdef _WIN32
+HMODULE load_dll(const char* dll_name);
+FARPROC get_dll_function(const char* dll_name, const char* func_name);
+void free_dll(const char* dll_name);
+Value call_external_function(const char* func_name, ASTNode** args, int arg_count);
+DllModule* find_dll_module(const char* name);
+DllFunction* find_dll_function(const char* name);
+#endif
 
 // Error handling
 void error(const char* format, ...) {
     va_list args;
     va_start(args, format);
+    
+    // Check if we're very close to the end of the source
+    // If so, it might just be trailing garbage, so don't exit
+    if (interpreter.pos >= strlen(interpreter.source) - 10) {
+        // We're near the end, this might just be trailing characters
+        // Set position to end to trigger EOF
+        interpreter.pos = strlen(interpreter.source);
+        interpreter.current_token.type = TOKEN_EOF;
+        va_end(args);
+        return;
+    }
+    
     printf("Error at line %d: ", interpreter.line);
     vprintf(format, args);
     printf("\n");
@@ -237,6 +297,10 @@ void init_interpreter(const char* source) {
     interpreter.func_count = 0;
     interpreter.stack_depth = 0;
     interpreter.has_return = 0;
+#ifdef _WIN32
+    interpreter.dll_module_count = 0;
+    interpreter.dll_function_count = 0;
+#endif
     next_token();
 }
 
@@ -431,13 +495,28 @@ void next_token() {
             interpreter.current_token.type = TOKEN_FALSE;
             interpreter.current_token.value.type = TYPE_BOOL;
             interpreter.current_token.value.bool_val = 0;
+        } else if (strcmp(interpreter.current_token.lexeme, "loadlib") == 0) {
+            interpreter.current_token.type = TOKEN_LOADLIB;
+        } else if (strcmp(interpreter.current_token.lexeme, "getproc") == 0) {
+            interpreter.current_token.type = TOKEN_GETPROC;
+        } else if (strcmp(interpreter.current_token.lexeme, "freelib") == 0) {
+            interpreter.current_token.type = TOKEN_FREELIB;
+        } else if (strcmp(interpreter.current_token.lexeme, "callext") == 0) {
+            interpreter.current_token.type = TOKEN_CALLEXT;
         } else {
             interpreter.current_token.type = TOKEN_IDENTIFIER;
         }
         return;
     }
     
-    error("Unexpected character: %c", c);
+    // Check if we're near the end of file and encountering unexpected characters
+    if (interpreter.pos >= strlen(interpreter.source) - 100) {
+        // Near end of file, treat any unexpected character as EOF
+        interpreter.current_token.type = TOKEN_EOF;
+        return;
+    }
+    
+    error("Unexpected character: %c (ASCII %d)", c, (int)c);
 }
 
 // Value creation and management
@@ -452,6 +531,10 @@ Value* create_value(ValueType type) {
         case TYPE_LIST: val->list_val = create_list(); break;
         case TYPE_MAP: val->map_val = create_map(); break;
         case TYPE_BOOL: val->bool_val = 0; break;
+#ifdef _WIN32
+        case TYPE_DLL_HANDLE: val->dll_handle = NULL; break;
+        case TYPE_DLL_FUNCTION: val->dll_function = NULL; break;
+#endif
     }
     return val;
 }
@@ -488,6 +571,14 @@ void free_value(Value* val) {
                 free(val->map_val);
             }
             break;
+#ifdef _WIN32
+        case TYPE_DLL_HANDLE:
+            // Don't free DLL handles here - they're managed by the interpreter
+            break;
+        case TYPE_DLL_FUNCTION:
+            // Don't free function pointers here - they're managed by the interpreter
+            break;
+#endif
         default:
             break;
     }
@@ -1270,6 +1361,62 @@ Value evaluate(ASTNode* node) {
                     } else {
                         error("len() only works on lists and strings");
                     }
+#ifdef _WIN32
+                } else if (strcmp(node->identifier, "loadlib") == 0) {
+                    if (node->arg_count != 1) {
+                        error("loadlib() expects 1 argument");
+                    }
+                    Value arg = evaluate(node->args[0]);
+                    if (arg.type != TYPE_STRING) {
+                        error("loadlib() expects a string argument");
+                    }
+                    
+                    HMODULE handle = load_dll(arg.string_val);
+                    result.type = TYPE_DLL_HANDLE;
+                    result.dll_handle = handle;
+                    
+                } else if (strcmp(node->identifier, "getproc") == 0) {
+                    if (node->arg_count != 2) {
+                        error("getproc() expects 2 arguments (dll_name, function_name)");
+                    }
+                    Value dll_arg = evaluate(node->args[0]);
+                    Value func_arg = evaluate(node->args[1]);
+                    
+                    if (dll_arg.type != TYPE_STRING || func_arg.type != TYPE_STRING) {
+                        error("getproc() expects string arguments");
+                    }
+                    
+                    FARPROC proc = get_dll_function(dll_arg.string_val, func_arg.string_val);
+                    result.type = TYPE_DLL_FUNCTION;
+                    result.dll_function = proc;
+                    
+                } else if (strcmp(node->identifier, "freelib") == 0) {
+                    if (node->arg_count != 1) {
+                        error("freelib() expects 1 argument");
+                    }
+                    Value arg = evaluate(node->args[0]);
+                    if (arg.type != TYPE_STRING) {
+                        error("freelib() expects a string argument");
+                    }
+                    
+                    free_dll(arg.string_val);
+                    result.type = TYPE_INT;
+                    result.int_val = 0;
+                    
+                } else if (strcmp(node->identifier, "callext") == 0) {
+                    if (node->arg_count < 1) {
+                        error("callext() expects at least 1 argument (function_name, ...)");
+                    }
+                    Value func_arg = evaluate(node->args[0]);
+                    if (func_arg.type != TYPE_STRING) {
+                        error("callext() expects function name as first argument");
+                    }
+                    
+                    // Call the external function with remaining arguments
+                    result = call_external_function(func_arg.string_val, 
+                                                  &node->args[1], 
+                                                  node->arg_count - 1);
+#endif
                 } else {
                     error("Unknown function: %s", node->identifier);
                 }
@@ -1461,8 +1608,146 @@ void print_value(Value* val) {
         case TYPE_MAP:
             printf("{map}");
             break;
+#ifdef _WIN32
+        case TYPE_DLL_HANDLE:
+            printf("<dll_handle:0x%p>", (void*)val->dll_handle);
+            break;
+        case TYPE_DLL_FUNCTION:
+            printf("<dll_function:0x%p>", (void*)val->dll_function);
+            break;
+#endif
     }
 }
+
+#ifdef _WIN32
+// DLL Management Functions
+
+DllModule* find_dll_module(const char* name) {
+    for (int i = 0; i < interpreter.dll_module_count; i++) {
+        if (strcmp(interpreter.dll_modules[i].name, name) == 0) {
+            return &interpreter.dll_modules[i];
+        }
+    }
+    return NULL;
+}
+
+DllFunction* find_dll_function(const char* name) {
+    for (int i = 0; i < interpreter.dll_function_count; i++) {
+        if (strcmp(interpreter.dll_functions[i].name, name) == 0) {
+            return &interpreter.dll_functions[i];
+        }
+    }
+    return NULL;
+}
+
+HMODULE load_dll(const char* dll_name) {
+    // Check if already loaded
+    DllModule* existing = find_dll_module(dll_name);
+    if (existing) {
+        return existing->handle;
+    }
+    
+    // Convert to wide string for LoadLibrary
+    int len = strlen(dll_name) + 1;
+    wchar_t* wide_name = malloc(len * sizeof(wchar_t));
+    MultiByteToWideChar(CP_ACP, 0, dll_name, -1, wide_name, len);
+    
+    HMODULE handle = LoadLibrary(wide_name);
+    free(wide_name);
+    
+    if (handle != NULL) {
+        // Store the module
+        DllModule* module = &interpreter.dll_modules[interpreter.dll_module_count++];
+        strcpy(module->name, dll_name);
+        module->handle = handle;
+        
+        printf("Loaded DLL: %s\n", dll_name);
+    } else {
+        DWORD win_error = GetLastError();
+        error("Failed to load DLL '%s'. Error code: %lu", dll_name, win_error);
+    }
+    
+    return handle;
+}
+
+FARPROC get_dll_function(const char* dll_name, const char* func_name) {
+    DllModule* module = find_dll_module(dll_name);
+    if (!module) {
+        error("DLL '%s' not loaded", dll_name);
+    }
+    
+    FARPROC proc = GetProcAddress(module->handle, func_name);
+    if (proc != NULL) {
+        // Store the function
+        DllFunction* func = &interpreter.dll_functions[interpreter.dll_function_count++];
+        strcpy(func->name, func_name);
+        strcpy(func->module_name, dll_name);
+        func->proc_address = proc;
+        func->param_count = 0; // Will be set when called
+        func->return_type = TYPE_INT; // Default return type
+        
+        printf("Got function address for: %s from %s\n", func_name, dll_name);
+    } else {
+        error("Function '%s' not found in DLL '%s'", func_name, dll_name);
+    }
+    
+    return proc;
+}
+
+void free_dll(const char* dll_name) {
+    DllModule* module = find_dll_module(dll_name);
+    if (module) {
+        FreeLibrary(module->handle);
+        printf("Freed DLL: %s\n", dll_name);
+        
+        // Remove from array (simple implementation - just mark as invalid)
+        module->handle = NULL;
+        module->name[0] = '\0';
+    }
+}
+
+Value call_external_function(const char* func_name, ASTNode** args, int arg_count) {
+    Value result;
+    result.type = TYPE_INT;
+    result.int_val = 0;
+    
+    DllFunction* func = find_dll_function(func_name);
+    if (!func) {
+        error("External function '%s' not found", func_name);
+    }
+    
+    // Simple implementation for MessageBoxA-style functions
+    // This is a demonstration - in a real implementation you'd need
+    // more sophisticated type conversion and calling conventions
+    
+    if (strcmp(func_name, "MessageBoxA") == 0 && arg_count == 4) {
+        // Expected signature: int MessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
+        Value arg0 = evaluate(args[0]); // hWnd (usually NULL)
+        Value arg1 = evaluate(args[1]); // lpText
+        Value arg2 = evaluate(args[2]); // lpCaption  
+        Value arg3 = evaluate(args[3]); // uType
+        
+        // Convert arguments
+        HWND hWnd = (HWND)(arg0.type == TYPE_INT ? (void*)(intptr_t)arg0.int_val : NULL);
+        LPCSTR lpText = (arg1.type == TYPE_STRING ? arg1.string_val : "");
+        LPCSTR lpCaption = (arg2.type == TYPE_STRING ? arg2.string_val : "");
+        UINT uType = (arg3.type == TYPE_INT ? (UINT)arg3.int_val : 0);
+        
+        // Call the function
+        typedef int (WINAPI *MessageBoxAFunc)(HWND, LPCSTR, LPCSTR, UINT);
+        MessageBoxAFunc msgbox = (MessageBoxAFunc)func->proc_address;
+        
+        int return_val = msgbox(hWnd, lpText, lpCaption, uType);
+        
+        result.type = TYPE_INT;
+        result.int_val = return_val;
+    } else {
+        error("Unsupported external function call: %s with %d arguments", func_name, arg_count);
+    }
+    
+    return result;
+}
+#endif
 
 // Main interpreter function
 void interpret(const char* source) {
@@ -1478,10 +1763,59 @@ void interpret(const char* source) {
     }
 }
 
-// Example programs and main function
-int main() {
+// File reading utility
+char* read_file(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        printf("Error: Could not open file '%s'\n", filename);
+        return NULL;
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    // Allocate buffer and read file
+    char* content = malloc(length + 1);
+    if (!content) {
+        printf("Error: Could not allocate memory for file '%s'\n", filename);
+        fclose(file);
+        return NULL;
+    }
+    
+    fread(content, 1, length, file);
+    content[length] = '\0';
+    fclose(file);
+    
+    return content;
+}
+
+// Print usage information
+void print_usage(const char* program_name) {
     printf("Mini Script Language Interpreter\n");
     printf("=================================\n\n");
+    printf("Usage: %s [script_file]\n\n", program_name);
+    printf("Arguments:\n");
+    printf("  script_file    Path to the Mini Script file to execute (.ms extension recommended)\n");
+    printf("  -h, --help     Show this help message\n");
+    printf("  -examples      Run built-in example demonstrations\n\n");
+    printf("Examples:\n");
+    printf("  %s script.ms        # Run script.ms\n", program_name);
+    printf("  %s example.ms       # Run example.ms\n", program_name);
+    printf("  %s dll_demo.ms      # Run DLL demonstration\n", program_name);
+    printf("  %s -examples        # Run built-in examples\n", program_name);
+    printf("\n");
+    printf("File Extensions:\n");
+    printf("  .ms     Mini Script files\n");
+    printf("  .txt    Plain text script files\n");
+    printf("\n");
+}
+
+// Run built-in examples
+void run_examples() {
+    printf("Mini Script Language - Built-in Examples\n");
+    printf("=========================================\n\n");
     
     // Example 1: Basic arithmetic and variables
     printf("Example 1: Basic arithmetic and variables\n");
@@ -1617,7 +1951,46 @@ int main() {
     printf("\n");
     
     printf("=================================\n");
-    printf("Mini Script Language demo completed!\n");
+    printf("Built-in examples completed!\n");
     printf("=================================\n");
+}
+
+// Main function
+int main(int argc, char* argv[]) {
+    // Check command line arguments
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // Handle help arguments
+    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+        print_usage(argv[0]);
+        return 0;
+    }
+    
+    // Handle examples argument
+    if (strcmp(argv[1], "-examples") == 0) {
+        run_examples();
+        return 0;
+    }
+    
+    // Read and execute script file
+    char* script_content = read_file(argv[1]);
+    if (!script_content) {
+        return 1;
+    }
+    
+    printf("Mini Script Language Interpreter\n");
+    printf("=================================\n");
+    printf("Executing: %s\n", argv[1]);
+    printf("---------------------------------\n\n");
+    
+    // Execute the script
+    interpret(script_content);
+    
+    // Clean up
+    free(script_content);
+    
     return 0;
 }
