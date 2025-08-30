@@ -360,6 +360,195 @@ echo 'import "math"; result = multiply(6, 7); print("6 * 7 =", result);' > main.
 - `.ms` - Mini Script files (recommended)
 - `.txt` - Plain text script files
 
+## Testing
+
+The Mini Script Language includes a comprehensive test suite with 20 organized tests covering all language features. The tests are designed to validate functionality and catch regressions during development.
+
+### Test Organization
+
+All tests are located in the `tests/` directory and follow a standardized naming convention:
+- **Pattern**: `test_XX_testtype.ms` (where XX is a two-digit number)
+- **Range**: `test_01_basic_types.ms` through `test_20_error_reporting.ms`
+- **Total**: 20 comprehensive tests covering core and advanced features
+
+#### Test Categories
+
+**Core Language Tests (01-13):**
+- `test_01_basic_types.ms` - Variable types and basic operations
+- `test_02_arithmetic.ms` - Mathematical expressions and operators  
+- `test_03_comparison.ms` - Comparison operators and logic
+- `test_04_logical.ms` - Boolean logic and conditional expressions
+- `test_05_string_ops.ms` - String concatenation and operations
+- `test_06_list_ops.ms` - List creation, access, and manipulation
+- `test_07_if_else.ms` - Conditional statement execution
+- `test_08_while_loop.ms` - While loop iteration and control
+- `test_09_for_loop.ms` - For loop syntax and execution
+- `test_10_functions.ms` - User-defined function definitions and calls
+- `test_11_function_scope.ms` - Local variable scoping and parameters
+- `test_12_function_recursion.ms` - Recursive function calls
+- `test_13_builtin_functions.ms` - Built-in functions like print() and len()
+
+**Advanced Features Tests (14-20):**
+- `test_14_module_basic.ms` - Basic module loading and execution
+- `test_15_module_functions.ms` - Function definitions in imported modules
+- `test_16_module_import.ms` - Module import syntax and resolution
+- `test_17_namespace_system.ms` - Namespace isolation and dot notation access
+- `test_18_repl_mode.ms` - Interactive REPL functionality
+- `test_19_file_operations.ms` - File I/O library functions
+- `test_20_error_reporting.ms` - Enhanced error messages with filenames
+
+### Test Runners
+
+Four specialized test runners are provided in the root directory:
+
+#### 1. `run_tests.bat` - Comprehensive Testing
+**Purpose**: Runs all 20 tests with detailed reporting and descriptions
+```bash
+.\run_tests.bat
+```
+**Features**:
+- Executes all tests in sequential order
+- Displays descriptive names and test purposes
+- Tracks passed/failed counts with final summary
+- Shows "ALL TESTS PASSED" or detailed failure information
+- Returns appropriate exit codes for automation
+
+**Sample Output**:
+```
+Running Mini Script Test Suite...
+==========================================
+
+Test 01 (Basic Types): Variable types and basic operations... PASSED
+Test 02 (Arithmetic): Mathematical expressions and operators... PASSED
+...
+Test 20 (Error Reporting): Enhanced error messages with filenames... PASSED
+
+Test Results: 20 passed, 0 failed
+Overall result: ALL TESTS PASSED
+```
+
+#### 2. `quick_test.bat` - Core Features Only
+**Purpose**: Runs essential core language tests (01-13) for rapid validation
+```bash
+.\quick_test.bat
+```
+**Features**:
+- Tests fundamental language features only
+- Faster execution for development cycles
+- Focuses on core interpreter functionality
+- Skips advanced features like namespaces and REPL
+
+#### 3. `test_advanced.bat` - Advanced Features
+**Purpose**: Runs advanced feature tests (14-20) for modern language capabilities
+```bash
+.\test_advanced.bat
+```
+**Features**:
+- Tests module system, namespaces, REPL mode
+- Validates file I/O operations and error reporting
+- Focuses on sophisticated language features
+- Useful for validating complex functionality
+
+#### 4. `test_verbose.bat` - Detailed Output
+**Purpose**: Runs a single test with full verbose output for debugging
+```bash
+.\test_verbose.bat
+```
+**Features**:
+- Prompts for specific test number to run
+- Shows complete interpreter output
+- Useful for debugging individual test failures
+- Displays all print statements and error messages
+
+### Running Tests
+
+#### Quick Start
+```bash
+# Run all tests (recommended)
+.\run_tests.bat
+
+# Run core features only (fast)
+.\quick_test.bat
+
+# Run advanced features only  
+.\test_advanced.bat
+
+# Debug a specific test
+.\test_verbose.bat
+```
+
+#### Manual Testing
+You can also run individual tests manually:
+```bash
+# Run a specific test
+.\mini_script.exe tests\test_01_basic_types.ms
+
+# Run tests with output
+.\mini_script.exe tests\test_10_functions.ms
+```
+
+### Test Coverage
+
+The test suite provides comprehensive coverage of:
+
+**Language Core:**
+- All 7 data types (int, float, char, string, list, map, bool)
+- Arithmetic, comparison, and logical operators
+- Control flow structures (if/else, while, for loops)
+- Variable assignment and scoping
+
+**Functions:**
+- User-defined function definitions with typed parameters
+- Function calls with return values
+- Local variable scoping and parameter passing
+- Recursive function execution
+- Built-in function usage
+
+**Advanced Features:**
+- Module import system with path resolution
+- Namespace system with dot notation access  
+- Interactive REPL mode functionality
+- File I/O operations and error handling
+- Enhanced error reporting with filenames
+
+**Edge Cases:**
+- Type conversions and mixed-type operations
+- Error conditions and recovery
+- Boundary conditions for data structures
+- Complex nested expressions and function calls
+
+### Adding New Tests
+
+When adding new language features, create corresponding tests:
+
+1. **Follow naming convention**: `test_XX_feature_name.ms`
+2. **Use next available number**: Check existing tests to find the next number
+3. **Include in test runners**: Update batch files to include the new test
+4. **Document test purpose**: Add clear description in test runners
+
+**Example new test structure**:
+```javascript
+// test_21_new_feature.ms
+// Test: New language feature description
+
+// Test basic functionality
+print("Testing new feature...");
+
+// Test edge cases
+// ... test code ...
+
+// Indicate test completion
+print("New feature tests completed successfully");
+```
+
+### Continuous Integration
+
+The test suite is designed for automation and CI/CD pipelines:
+- All batch files return proper exit codes (0 = success, 1 = failure)
+- Output is machine-readable with clear pass/fail indicators
+- Tests are self-contained and don't require external dependencies
+- Test execution is deterministic and repeatable
+
 ## Implementation Details
 
 The interpreter is implemented as a single C file (`mini_script.c`) and includes:

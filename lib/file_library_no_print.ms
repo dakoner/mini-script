@@ -1,6 +1,7 @@
 // File Library for Mini Script Language - Namespace Version
 // Provides file I/O operations
 
+// Define wrapper functions for namespace access
 function open(string filename, string mode) {
     return fopen(filename, mode);
 }
@@ -33,7 +34,6 @@ function size(string filename) {
     return fsize(filename);
 }
 
+// Module metadata
 version = "2.0";
 name = "FileLibrary";
-
-print("File library v2.0 loaded");

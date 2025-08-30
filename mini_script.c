@@ -2218,7 +2218,8 @@ void execute_module_content(const char* content, const char* filename) {
     
     // Set up for module parsing - don't touch other interpreter state
     interpreter.source = (char*)content;
-    interpreter.filename = filename ? strdup(filename) : strdup("<unknown>");
+    // Temporarily set filename for error reporting without freeing/allocating
+    interpreter.filename = (char*)filename;
     interpreter.pos = 0;
     interpreter.line = 1;
     
@@ -2238,7 +2239,6 @@ void execute_module_content(const char* content, const char* filename) {
     }
     
     // Restore the parsing context exactly as it was
-    free(interpreter.filename);  // Free the temporary filename
     interpreter.source = original_source;
     interpreter.filename = original_filename;
     interpreter.pos = original_pos;

@@ -3,18 +3,18 @@ print("=== Test 16: Module Import System ===");
 
 // Test 1: Basic import functionality
 print("Test 1: Basic import");
-import "../scripts/tiny_module.ms";
+import "scripts/tiny_module";
 
 // Test 2: Variable import
 print("Test 2: Variable import");
-import "../scripts/vars_module.ms";
+import "scripts/vars_module";
 print("Imported var1:", var1);
 print("Imported var2:", var2);
 print("Imported var3:", var3);
 
 // Test 3: Advanced math utilities with functions and variables
 print("Test 3: Math utilities import");
-import "../scripts/math_utils.ms";
+import "scripts/math_utils";
 add_result = add(5, 3);
 mult_result = multiply(4, 6);
 square_result = square(7);
