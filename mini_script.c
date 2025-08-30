@@ -2479,13 +2479,22 @@ void print_usage(const char* program_name) {
     printf("Usage: %s [script_file]\n\n", program_name);
     printf("Arguments:\n");
     printf("  script_file    Path to the Mini Script file to execute (.ms extension recommended)\n");
-    printf("  -h, --help     Show this help message\n");
-    printf("  -examples      Run built-in example demonstrations\n\n");
+    printf("  -h, --help     Show this help message\n\n");
     printf("Examples:\n");
-    printf("  %s script.ms        # Run script.ms\n", program_name);
-    printf("  %s example.ms       # Run example.ms\n", program_name);
-    printf("  %s dll_demo.ms      # Run DLL demonstration\n", program_name);
-    printf("  %s -examples        # Run built-in examples\n", program_name);
+    printf("  %s script.ms             # Run script.ms\n", program_name);
+    printf("  %s scripts/examples.ms   # Run all built-in examples\n", program_name);
+    printf("  %s examples/1_arithmetic.ms  # Run arithmetic example\n", program_name);
+    printf("  %s dll_demo.ms           # Run DLL demonstration\n", program_name);
+    printf("\n");
+    printf("Built-in Examples:\n");
+    printf("  scripts/examples.ms                 # All examples\n");
+    printf("  examples/1_arithmetic.ms            # Basic arithmetic\n");
+    printf("  examples/2_control_flow.ms          # If/else statements\n");
+    printf("  examples/3_loops.ms                 # While and for loops\n");
+    printf("  examples/4_lists.ms                 # List operations\n");
+    printf("  examples/5_strings.ms               # String manipulation\n");
+    printf("  examples/6_boolean_logic.ms         # Boolean operations\n");
+    printf("  examples/7_complex_expressions.ms   # Complex math\n");
     printf("\n");
     printf("File Extensions:\n");
     printf("  .ms     Mini Script files\n");
@@ -2493,148 +2502,7 @@ void print_usage(const char* program_name) {
     printf("\n");
 }
 
-// Run built-in examples
-void run_examples() {
-    printf("Mini Script Language - Built-in Examples\n");
-    printf("=========================================\n\n");
-    
-    // Example 1: Basic arithmetic and variables
-    printf("Example 1: Basic arithmetic and variables\n");
-    printf("------------------------------------------\n");
-    const char* prog1 = 
-        "x = 10;\n"
-        "y = 20;\n"
-        "z = x + y;\n"
-        "print(\"Variables: x =\", x, \", y =\", y);\n"
-        "print(\"Sum:\", z);\n"
-        "print(\"Product:\", x * y);\n"
-        "print(\"Division:\", y / 4.0);\n";
-    
-    interpret(prog1);
-    printf("\n");
-    
-    // Example 2: Control flow
-    printf("Example 2: Control flow\n");
-    printf("-----------------------\n");
-    const char* prog2 = 
-        "n = 15;\n"
-        "print(\"Testing number:\", n);\n"
-        "if (n > 10) {\n"
-        "    print(\"Number is greater than 10\");\n"
-        "    if (n > 20) {\n"
-        "        print(\"Number is also greater than 20\");\n"
-        "    } else {\n"
-        "        print(\"Number is between 10 and 20\");\n"
-        "    }\n"
-        "} else {\n"
-        "    print(\"Number is 10 or less\");\n"
-        "}\n";
-    
-    interpret(prog2);
-    printf("\n");
-    
-    // Example 3: Loops
-    printf("Example 3: Loops\n");
-    printf("----------------\n");
-    const char* prog3 = 
-        "print(\"While loop countdown:\");\n"
-        "i = 5;\n"
-        "while (i > 0) {\n"
-        "    print(\"Countdown:\", i);\n"
-        "    i = i - 1;\n"
-        "}\n"
-        "print(\"Blast off!\");\n"
-        "\n"
-        "print(\"For loop (squares):\");\n"
-        "for (j = 1; j <= 5; j = j + 1) {\n"
-        "    square = j * j;\n"
-        "    print(j, \"squared is\", square);\n"
-        "}\n";
-    
-    interpret(prog3);
-    printf("\n");
-    
-    // Example 4: Lists
-    printf("Example 4: Lists\n");
-    printf("----------------\n");
-    const char* prog4 = 
-        "numbers = [1, 2, 3, 4, 5];\n"
-        "print(\"Numbers list:\", numbers);\n"
-        "print(\"List length:\", len(numbers));\n"
-        "\n"
-        "mixed = [42, \"hello\", 3.14, true];\n"
-        "print(\"Mixed types:\", mixed);\n"
-        "print(\"Mixed length:\", len(mixed));\n";
-    
-    interpret(prog4);
-    printf("\n");
-    
-    // Example 5: Strings
-    printf("Example 5: Strings\n");
-    printf("------------------\n");
-    const char* prog5 = 
-        "greeting = \"Hello\";\n"
-        "target = \"Mini Script\";\n"
-        "exclamation = \"!\";\n"
-        "message = greeting + \" \" + target + exclamation;\n"
-        "print(\"Message:\", message);\n"
-        "print(\"Length:\", len(message));\n"
-        "\n"
-        "name = \"Alice\";\n"
-        "age = 30;\n"
-        "intro = \"My name is \" + name;\n"
-        "print(intro);\n";
-    
-    interpret(prog5);
-    printf("\n");
-    
-    // Example 6: Boolean logic
-    printf("Example 6: Boolean logic\n");
-    printf("------------------------\n");
-    const char* prog6 =
-        "a = true;\n"
-        "b = false;\n"
-        "print(\"a =\", a, \", b =\", b);\n"
-        "print(\"a && b =\", a && b);\n"
-        "print(\"a || b =\", a || b);\n"
-        "print(\"!a =\", !a);\n"
-        "\n"
-        "x = 5;\n"
-        "y = 10;\n"
-        "print(\"x =\", x, \", y =\", y);\n"
-        "print(\"x < y =\", x < y);\n"
-        "print(\"x == y =\", x == y);\n"
-        "print(\"x != y =\", x != y);\n";
-    
-    interpret(prog6);
-    printf("\n");
-    
-    // Example 7: Complex expressions
-    printf("Example 7: Complex expressions\n");
-    printf("------------------------------\n");
-    const char* prog7 =
-        "print(\"Mathematical expressions:\");\n"
-        "result1 = 2 + 3 * 4;\n"
-        "result2 = (2 + 3) * 4;\n"
-        "print(\"2 + 3 * 4 =\", result1);\n"
-        "print(\"(2 + 3) * 4 =\", result2);\n"
-        "\n"
-        "print(\"Logical expressions:\");\n"
-        "score = 85;\n"
-        "passed = score >= 60;\n"
-        "excellent = score >= 90;\n"
-        "print(\"Score:\", score);\n"
-        "print(\"Passed:\", passed);\n"
-        "print(\"Excellent:\", excellent);\n"
-        "print(\"Good but not excellent:\", passed && !excellent);\n";
-    
-    interpret(prog7);
-    printf("\n");
-    
-    printf("=================================\n");
-    printf("Built-in examples completed!\n");
-    printf("=================================\n");
-}
+
 
 // Main function
 int main(int argc, char* argv[]) {
@@ -2647,12 +2515,6 @@ int main(int argc, char* argv[]) {
     // Handle help arguments
     if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         print_usage(argv[0]);
-        return 0;
-    }
-    
-    // Handle examples argument
-    if (strcmp(argv[1], "-examples") == 0) {
-        run_examples();
         return 0;
     }
     
