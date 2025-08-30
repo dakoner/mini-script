@@ -31,6 +31,11 @@ The test suite is organized into focused test files, each testing specific langu
 12. **test_12_complex.ms** - Complex expressions, operator precedence, nested calls
 13. **test_13_edge_cases.ms** - Edge cases, error conditions, boundary testing
 
+### Advanced Framework Tests
+
+14. **test_14_dll_loading.ms** - DLL loading framework syntax and integration testing
+15. **test_15_large_file.ms** - Very large script file processing (1000+ lines)
+
 ## Running the Tests
 
 ### Windows Batch Script (Recommended)
@@ -70,10 +75,11 @@ Running test_01_basic_types... PASSED
 Running test_02_arithmetic... PASSED
 Running test_03_strings... PASSED
 ...
-Running test_13_edge_cases... PASSED
+Running test_14_dll_loading... PASSED
+Running test_15_large_file... PASSED
 
 ==================================================
-Test Results: 13 passed, 0 failed
+Test Results: 15 passed, 0 failed
 Overall result: ALL TESTS PASSED
 ```
 
@@ -111,13 +117,16 @@ The test suite covers:
 - ✅ Boolean edge cases
 - ✅ Limited recursion depth
 
-### Error Handling
-The tests verify that the interpreter correctly handles:
-- Valid syntax variations
-- Boundary conditions
-- Complex expression parsing
-- Proper operator precedence
-- Correct function call semantics
+### Advanced Framework Testing
+- ✅ DLL loading framework syntax validation
+- ✅ Windows API integration points
+- ✅ External function call simulation
+- ✅ Parameter marshaling testing
+- ✅ Error scenario coverage
+- ✅ Large file processing (1000+ lines)
+- ✅ Memory and parser stress testing
+- ✅ Performance validation
+- ✅ Scalability verification
 
 ## Adding New Tests
 
