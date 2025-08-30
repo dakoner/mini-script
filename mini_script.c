@@ -66,7 +66,8 @@ typedef enum {
     TOKEN_LOADLIB,
     TOKEN_GETPROC,
     TOKEN_FREELIB,
-    TOKEN_CALLEXT
+    TOKEN_CALLEXT,
+    TOKEN_IMPORT
 } ScriptTokenType;
 
 // Value types
@@ -184,6 +185,7 @@ typedef enum {
     NODE_FOR,
     NODE_BLOCK,
     NODE_RETURN,
+    NODE_IMPORT,
     NODE_LIST_ACCESS,
     NODE_MAP_ACCESS
 } NodeType;
@@ -253,6 +255,8 @@ ASTNode* parse_block();
 ASTNode* parse_function();
 Value evaluate(ASTNode* node);
 void execute_statement(ASTNode* node);
+void execute_import(const char* module_path);
+void execute_module_content(const char* content);
 Variable* find_variable(const char* name);
 Function* find_function(const char* name);
 void print_value(Value* val);
@@ -503,6 +507,8 @@ void next_token() {
             interpreter.current_token.type = TOKEN_FREELIB;
         } else if (strcmp(interpreter.current_token.lexeme, "callext") == 0) {
             interpreter.current_token.type = TOKEN_CALLEXT;
+        } else if (strcmp(interpreter.current_token.lexeme, "import") == 0) {
+            interpreter.current_token.type = TOKEN_IMPORT;
         } else {
             interpreter.current_token.type = TOKEN_IDENTIFIER;
         }
@@ -1031,6 +1037,25 @@ ASTNode* parse_statement() {
         if (interpreter.current_token.type != TOKEN_SEMICOLON) {
             node->left = parse_expression();
         }
+        
+        if (interpreter.current_token.type == TOKEN_SEMICOLON) {
+            next_token();
+        }
+        
+        return node;
+    }
+    
+    if (interpreter.current_token.type == TOKEN_IMPORT) {
+        ASTNode* node = create_node(NODE_IMPORT);
+        next_token();
+        
+        if (interpreter.current_token.type != TOKEN_STRING) {
+            error("Expected string literal after 'import'");
+        }
+        
+        // Store the module name/path in the identifier field
+        strcpy(node->identifier, interpreter.current_token.lexeme);
+        next_token();
         
         if (interpreter.current_token.type == TOKEN_SEMICOLON) {
             next_token();
@@ -1572,11 +1597,112 @@ void execute_statement(ASTNode* node) {
             break;
         }
         
+        case NODE_IMPORT: {
+            execute_import(node->identifier);
+            break;
+        }
+        
         default:
             // Expression statement
             evaluate(node);
             break;
     }
+}
+
+// Function to execute module content without changing global parser state
+void execute_module_content(const char* content) {
+    // Save current global state
+    char* old_source = interpreter.source;
+    int old_pos = interpreter.pos;
+    int old_line = interpreter.line;
+    Token old_token = interpreter.current_token;
+    
+    // Temporarily set the module content (cast away const for compatibility)
+    interpreter.source = (char*)content;
+    interpreter.pos = 0;
+    interpreter.line = 1;
+    next_token();
+    
+    // Execute the module statements
+    while (interpreter.current_token.type != TOKEN_EOF) {
+        if (interpreter.current_token.type == TOKEN_FUNCTION) {
+            parse_function();
+        } else {
+            ASTNode* stmt = parse_statement();
+            if (stmt) {
+                execute_statement(stmt);
+            }
+        }
+    }
+    
+    // Restore global state
+    interpreter.source = old_source;
+    interpreter.pos = old_pos;
+    interpreter.line = old_line;
+    interpreter.current_token = old_token;
+}
+
+void execute_import(const char* module_path) {
+    char full_path[1024];
+    FILE* file = NULL;
+    
+    // First try the module path as-is (relative to current directory)
+    strcpy(full_path, module_path);
+    file = fopen(full_path, "r");
+    
+    if (!file) {
+        // Try with .ms extension if not present
+        if (strstr(module_path, ".ms") == NULL) {
+            sprintf(full_path, "%s.ms", module_path);
+            file = fopen(full_path, "r");
+        }
+    }
+    
+    // If still not found, try MODULESPATH environment variable
+    if (!file) {
+        char* modules_path = getenv("MODULESPATH");
+        if (modules_path) {
+            char* path_copy = malloc(strlen(modules_path) + 1);
+            strcpy(path_copy, modules_path);
+            
+            char* path_token = strtok(path_copy, ";");
+            while (path_token && !file) {
+                // Try the exact module path
+                sprintf(full_path, "%s\\%s", path_token, module_path);
+                file = fopen(full_path, "r");
+                
+                // Try with .ms extension
+                if (!file && strstr(module_path, ".ms") == NULL) {
+                    sprintf(full_path, "%s\\%s.ms", path_token, module_path);
+                    file = fopen(full_path, "r");
+                }
+                
+                path_token = strtok(NULL, ";");
+            }
+            
+            free(path_copy);
+        }
+    }
+    
+    if (!file) {
+        error("Cannot find module: %s", module_path);
+        return;
+    }
+    
+    // Read the file content
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    char* module_source = malloc(file_size + 1);
+    size_t bytes_read = fread(module_source, 1, file_size, file);
+    module_source[file_size] = '\0';
+    fclose(file);
+    
+    // Execute the module content
+    execute_module_content(module_source);
+    
+    free(module_source);
 }
 
 // Print value utility
