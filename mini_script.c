@@ -250,6 +250,7 @@ typedef struct ASTNode {
 // Interpreter state
 typedef struct {
     char* source;
+    char* filename;  // Track current filename for error reporting
     int pos;
     int line;
     Token current_token;
@@ -276,7 +277,7 @@ Interpreter interpreter;
 
 // Function prototypes
 void error(const char* format, ...);
-void init_interpreter(const char* source);
+void init_interpreter(const char* source, const char* filename);
 void next_token();
 Value* create_value(ValueType type);
 void free_value(Value* val);
@@ -295,7 +296,7 @@ Value evaluate(ASTNode* node);
 void execute_statement(ASTNode* node);
 void execute_import(const char* module_path);
 void execute_import_with_namespace(const char* module_path, const char* namespace_name);
-void execute_module_content(const char* content);
+void execute_module_content(const char* content, const char* filename);
 Value call_user_function(Function* func, ASTNode** args, int arg_count);
 Variable* find_variable(const char* name);
 Function* find_function(const char* name);
@@ -332,7 +333,7 @@ void error(const char* format, ...) {
         return;
     }
     
-    printf("Error at line %d: ", interpreter.line);
+    printf("Error in %s at line %d: ", interpreter.filename, interpreter.line);
     vprintf(format, args);
     printf("\n");
     va_end(args);
@@ -340,8 +341,9 @@ void error(const char* format, ...) {
 }
 
 // Initialize interpreter
-void init_interpreter(const char* source) {
+void init_interpreter(const char* source, const char* filename) {
     interpreter.source = strdup(source);
+    interpreter.filename = filename ? strdup(filename) : strdup("<unknown>");
     interpreter.pos = 0;
     interpreter.line = 1;
     interpreter.var_count = 0;
@@ -2202,9 +2204,10 @@ void execute_statement(ASTNode* node) {
 }
 
 // Function to execute module content with minimal state interference
-void execute_module_content(const char* content) {
+void execute_module_content(const char* content, const char* filename) {
     // Save only the essential parsing context
     char* original_source = interpreter.source;
+    char* original_filename = interpreter.filename;
     int original_pos = interpreter.pos;
     int original_line = interpreter.line;
     Token original_token = interpreter.current_token;
@@ -2215,6 +2218,7 @@ void execute_module_content(const char* content) {
     
     // Set up for module parsing - don't touch other interpreter state
     interpreter.source = (char*)content;
+    interpreter.filename = filename ? strdup(filename) : strdup("<unknown>");
     interpreter.pos = 0;
     interpreter.line = 1;
     
@@ -2234,7 +2238,9 @@ void execute_module_content(const char* content) {
     }
     
     // Restore the parsing context exactly as it was
+    free(interpreter.filename);  // Free the temporary filename
     interpreter.source = original_source;
+    interpreter.filename = original_filename;
     interpreter.pos = original_pos;
     interpreter.line = original_line;
     interpreter.current_token = original_token;
@@ -2301,7 +2307,7 @@ void execute_import(const char* module_path) {
     fclose(file);
     
     // Execute the module content
-    execute_module_content(module_source);
+    execute_module_content(module_source, full_path);
     
     free(module_source);
 }
@@ -2387,7 +2393,7 @@ void execute_import_with_namespace(const char* module_path, const char* namespac
         memset(interpreter.functions, 0, sizeof(interpreter.functions));
         
         // Execute module content in isolation
-        execute_module_content(module_source);
+        execute_module_content(module_source, full_path);
         
         // Create namespace and move definitions
         Namespace* ns = create_namespace(namespace_name);
@@ -2430,7 +2436,7 @@ void execute_import_with_namespace(const char* module_path, const char* namespac
         free(old_functions);
     } else {
         // Old behavior: execute in global namespace
-        execute_module_content(module_source);
+        execute_module_content(module_source, full_path);
     }
     
     free(module_source);
@@ -2708,8 +2714,8 @@ Value call_external_function(const char* func_name, ASTNode** args, int arg_coun
 #endif
 
 // Main interpreter function
-void interpret(const char* source) {
-    init_interpreter(source);
+void interpret(const char* source, const char* filename) {
+    init_interpreter(source, filename);
     
     while (interpreter.current_token.type != TOKEN_EOF) {
         if (interpreter.current_token.type == TOKEN_FUNCTION) {
@@ -2848,7 +2854,7 @@ void run_repl() {
         fflush(stdout);
         
         // Store current interpreter state in case of error
-        interpret(command);
+        interpret(command, "<REPL>");
         
         line_number++;
         printf("\n");
@@ -2884,7 +2890,7 @@ int main(int argc, char* argv[]) {
     printf("---------------------------------\n\n");
     
     // Execute the script
-    interpret(script_content);
+    interpret(script_content, argv[1]);
     
     // Clean up
     free(script_content);
