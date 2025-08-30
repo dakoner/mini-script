@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -2755,6 +2756,7 @@ void print_usage(const char* program_name) {
     printf("Usage: %s [script_file]\n\n", program_name);
     printf("Arguments:\n");
     printf("  script_file    Path to the Mini Script file to execute (.ms extension recommended)\n");
+    printf("  (no args)      Start interactive REPL mode\n");
     printf("  -h, --help     Show this help message\n\n");
     printf("Examples:\n");
     printf("  %s script.ms             # Run script.ms\n", program_name);
@@ -2778,14 +2780,90 @@ void print_usage(const char* program_name) {
     printf("\n");
 }
 
+void run_repl() {
+    printf("Mini Script Language Interpreter - REPL Mode\n");
+    printf("=============================================\n");
+    printf("Type Mini Script commands or 'exit' to quit.\n");
+    printf("Examples: x = 10; print(x); time.now(); etc.\n");
+    printf("---------------------------------------------\n\n");
+    
+    char input[1024];
+    int line_number = 1;
+    
+    while (1) {
+        printf("ms[%d]> ", line_number);
+        fflush(stdout);
+        
+        // Read input line
+        if (!fgets(input, sizeof(input), stdin)) {
+            printf("\nGoodbye!\n");
+            break;
+        }
+        
+        // Remove trailing newline
+        size_t len = strlen(input);
+        if (len > 0 && input[len-1] == '\n') {
+            input[len-1] = '\0';
+        }
+        
+        // Check for exit commands
+        if (strcmp(input, "exit") == 0 || strcmp(input, "quit") == 0) {
+            printf("Goodbye!\n");
+            break;
+        }
+        
+        // Skip empty lines
+        if (strlen(input) == 0) {
+            continue;
+        }
+        
+        // Add semicolon if not present and not a control structure
+        len = strlen(input);
+        bool needs_semicolon = true;
+        if (len > 0) {
+            char last_char = input[len-1];
+            if (last_char == ';' || last_char == '{' || last_char == '}') {
+                needs_semicolon = false;
+            }
+            // Check if it's a control structure
+            if (strstr(input, "if ") == input || 
+                strstr(input, "while ") == input || 
+                strstr(input, "for ") == input ||
+                strstr(input, "function ") == input) {
+                needs_semicolon = false;
+            }
+        }
+        
+        // Prepare command for execution
+        char command[1100];
+        if (needs_semicolon) {
+            snprintf(command, sizeof(command), "%s;", input);
+        } else {
+            strncpy(command, input, sizeof(command) - 1);
+            command[sizeof(command) - 1] = '\0';
+        }
+        
+        // Execute the command
+        printf("=> ");
+        fflush(stdout);
+        
+        // Store current interpreter state in case of error
+        interpret(command);
+        
+        line_number++;
+        printf("\n");
+    }
+}
+
 
 
 // Main function
 int main(int argc, char* argv[]) {
     // Check command line arguments
     if (argc < 2) {
-        print_usage(argv[0]);
-        return 1;
+        // Start REPL mode when no script file is provided
+        run_repl();
+        return 0;
     }
     
     // Handle help arguments
