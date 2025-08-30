@@ -176,9 +176,10 @@ typedef struct {
 } Token;
 
 // Variable structure
-typedef struct {
+typedef struct Variable {
     char name[MAX_IDENTIFIER_LEN];
     Value value;
+    struct Variable* next;  // For namespace linked lists
 } Variable;
 
 // Function parameter structure
@@ -188,13 +189,22 @@ typedef struct {
 } Parameter;
 
 // Function structure
-typedef struct {
+typedef struct Function {
     char name[MAX_IDENTIFIER_LEN];
     Parameter params[MAX_PARAMS];
     int param_count;
     char* body_source;
     ValueType return_type;
+    struct Function* next;  // For namespace linked lists
 } Function;
+
+// Namespace structure
+typedef struct Namespace {
+    char name[MAX_IDENTIFIER_LEN];
+    Variable* variables;     // Namespace variables
+    Function* functions;     // Namespace functions
+    struct Namespace* next;
+} Namespace;
 
 // AST Node types
 typedef enum {
@@ -219,6 +229,7 @@ typedef struct ASTNode {
     NodeType type;
     Value value;
     char identifier[MAX_IDENTIFIER_LEN];
+    char namespace_name[MAX_IDENTIFIER_LEN];  // Add namespace support
     ScriptTokenType operator;
     struct ASTNode* left;
     struct ASTNode* right;
@@ -244,6 +255,7 @@ typedef struct {
     int var_count;
     Function functions[MAX_FUNCTIONS];
     int func_count;
+    Namespace* namespaces;  // Add namespace tracking
     Variable stack[MAX_STACK_DEPTH][MAX_VARIABLES];
     int stack_vars[MAX_STACK_DEPTH];
     int stack_depth;
@@ -280,6 +292,7 @@ ASTNode* parse_function();
 Value evaluate(ASTNode* node);
 void execute_statement(ASTNode* node);
 void execute_import(const char* module_path);
+void execute_import_with_namespace(const char* module_path, const char* namespace_name);
 void execute_module_content(const char* content);
 Value call_user_function(Function* func, ASTNode** args, int arg_count);
 Variable* find_variable(const char* name);
@@ -293,6 +306,13 @@ Value call_external_function(const char* func_name, ASTNode** args, int arg_coun
 DllModule* find_dll_module(const char* name);
 DllFunction* find_dll_function(const char* name);
 #endif
+
+// Namespace management functions
+Namespace* create_namespace(const char* name);
+Namespace* find_namespace(const char* name);
+void add_namespace(Namespace* ns);
+void add_variable_to_namespace(Namespace* ns, Variable* var);
+void add_function_to_namespace(Namespace* ns, Function* func);
 
 // Error handling
 void error(const char* format, ...) {
@@ -324,6 +344,7 @@ void init_interpreter(const char* source) {
     interpreter.line = 1;
     interpreter.var_count = 0;
     interpreter.func_count = 0;
+    interpreter.namespaces = NULL;  // Initialize namespaces
     interpreter.stack_depth = 0;
     interpreter.has_return = 0;
 #ifdef _WIN32
@@ -696,8 +717,68 @@ Value* map_get(Map* map, const char* key) {
     return NULL;
 }
 
+// Namespace management functions
+Namespace* create_namespace(const char* name) {
+    Namespace* ns = (Namespace*)malloc(sizeof(Namespace));
+    strcpy(ns->name, name);
+    ns->variables = NULL;
+    ns->functions = NULL;
+    ns->next = NULL;
+    return ns;
+}
+
+Namespace* find_namespace(const char* name) {
+    Namespace* current = interpreter.namespaces;
+    while (current != NULL) {
+        if (strcmp(current->name, name) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+void add_namespace(Namespace* ns) {
+    ns->next = interpreter.namespaces;
+    interpreter.namespaces = ns;
+}
+
+void add_variable_to_namespace(Namespace* ns, Variable* var) {
+    var->next = ns->variables;
+    ns->variables = var;
+}
+
+void add_function_to_namespace(Namespace* ns, Function* func) {
+    func->next = ns->functions;
+    ns->functions = func;
+}
+
 // Variable and function management
 Variable* find_variable(const char* name) {
+    // Check for namespace.variable syntax
+    char* dot = strchr(name, '.');
+    if (dot != NULL) {
+        char ns_name[MAX_IDENTIFIER_LEN];
+        char var_name[MAX_IDENTIFIER_LEN];
+        
+        int ns_len = dot - name;
+        strncpy(ns_name, name, ns_len);
+        ns_name[ns_len] = '\0';
+        strcpy(var_name, dot + 1);
+        
+        Namespace* ns = find_namespace(ns_name);
+        if (ns != NULL) {
+            Variable* current = ns->variables;
+            while (current != NULL) {
+                if (strcmp(current->name, var_name) == 0) {
+                    return current;
+                }
+                current = current->next;
+            }
+        }
+        return NULL;
+    }
+    
     // Check current stack frame first
     if (interpreter.stack_depth > 0) {
         for (int i = 0; i < interpreter.stack_vars[interpreter.stack_depth - 1]; i++) {
@@ -717,6 +798,31 @@ Variable* find_variable(const char* name) {
 }
 
 Function* find_function(const char* name) {
+    // Check for namespace.function syntax
+    char* dot = strchr(name, '.');
+    if (dot != NULL) {
+        char ns_name[MAX_IDENTIFIER_LEN];
+        char func_name[MAX_IDENTIFIER_LEN];
+        
+        int ns_len = dot - name;
+        strncpy(ns_name, name, ns_len);
+        ns_name[ns_len] = '\0';
+        strcpy(func_name, dot + 1);
+        
+        Namespace* ns = find_namespace(ns_name);
+        if (ns != NULL) {
+            Function* current = ns->functions;
+            while (current != NULL) {
+                if (strcmp(current->name, func_name) == 0) {
+                    return current;
+                }
+                current = current->next;
+            }
+        }
+        return NULL;
+    }
+    
+    // Check global functions
     for (int i = 0; i < interpreter.func_count; i++) {
         if (strcmp(interpreter.functions[i].name, name) == 0) {
             return &interpreter.functions[i];
@@ -1072,10 +1178,34 @@ ASTNode* parse_statement() {
     
     if (interpreter.current_token.type == TOKEN_IMPORT) {
         ASTNode* node = create_node(NODE_IMPORT);
-        next_token();
+        next_token(); // consume TOKEN_IMPORT
         
+        // Initialize namespace_name
+        node->namespace_name[0] = '\0';
+        
+        // Check for namespace syntax: import name from "file"
+        if (interpreter.current_token.type == TOKEN_IDENTIFIER) {
+            strcpy(node->namespace_name, interpreter.current_token.lexeme);
+            next_token(); // consume namespace name
+            
+            // Expect "from" keyword
+            if (interpreter.current_token.type != TOKEN_IDENTIFIER || 
+                strcmp(interpreter.current_token.lexeme, "from") != 0) {
+                // If not "from", this might be the old syntax
+                if (interpreter.current_token.type == TOKEN_STRING) {
+                    // Old syntax: import "file" - clear namespace name
+                    node->namespace_name[0] = '\0';
+                    goto parse_string;
+                }
+                error("Expected 'from' after import namespace name or string literal");
+            }
+            next_token(); // consume "from"
+        }
+        
+        parse_string:
+        // Get the module path
         if (interpreter.current_token.type != TOKEN_STRING) {
-            error("Expected string literal after 'import'");
+            error("Expected string literal after 'import' or 'from'");
         }
         
         // Store the module name/path in the identifier field
@@ -2043,7 +2173,7 @@ void execute_statement(ASTNode* node) {
         }
         
         case NODE_IMPORT: {
-            execute_import(node->identifier);
+            execute_import_with_namespace(node->identifier, node->namespace_name);
             break;
         }
         
@@ -2155,6 +2285,115 @@ void execute_import(const char* module_path) {
     
     // Execute the module content
     execute_module_content(module_source);
+    
+    free(module_source);
+}
+
+// Execute import with namespace support
+void execute_import_with_namespace(const char* module_path, const char* namespace_name) {
+    char full_path[1024];
+    FILE* file = NULL;
+    
+    // Find the module file (same logic as execute_import)
+    strcpy(full_path, module_path);
+    file = fopen(full_path, "r");
+    
+    if (!file) {
+        if (strstr(module_path, ".ms") == NULL) {
+            sprintf(full_path, "%s.ms", module_path);
+            file = fopen(full_path, "r");
+        }
+    }
+    
+    if (!file) {
+        char* modules_path = getenv("MODULESPATH");
+        if (modules_path) {
+            char* path_copy = malloc(strlen(modules_path) + 1);
+            strcpy(path_copy, modules_path);
+            
+            char* path_token = strtok(path_copy, ";");
+            while (path_token && !file) {
+                sprintf(full_path, "%s\\%s", path_token, module_path);
+                file = fopen(full_path, "r");
+                
+                if (!file && strstr(module_path, ".ms") == NULL) {
+                    sprintf(full_path, "%s\\%s.ms", path_token, module_path);
+                    file = fopen(full_path, "r");
+                }
+                
+                path_token = strtok(NULL, ";");
+            }
+            
+            free(path_copy);
+        }
+    }
+    
+    if (!file) {
+        error("Cannot find module: %s", module_path);
+        return;
+    }
+    
+    // Read the file content
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    char* module_source = malloc(file_size + 1);
+    size_t bytes_read = fread(module_source, 1, file_size, file);
+    module_source[file_size] = '\0';
+    fclose(file);
+    
+    // If namespace is specified, create isolated execution context
+    if (namespace_name != NULL && strlen(namespace_name) > 0) {
+        // Save current state
+        int old_var_count = interpreter.var_count;
+        int old_func_count = interpreter.func_count;
+        Variable old_variables[MAX_VARIABLES];
+        Function old_functions[MAX_FUNCTIONS];
+        
+        // Save variables and functions
+        memcpy(old_variables, interpreter.variables, sizeof(Variable) * old_var_count);
+        memcpy(old_functions, interpreter.functions, sizeof(Function) * old_func_count);
+        
+        // Clear current state for isolated execution
+        interpreter.var_count = 0;
+        interpreter.func_count = 0;
+        memset(interpreter.variables, 0, sizeof(interpreter.variables));
+        memset(interpreter.functions, 0, sizeof(interpreter.functions));
+        
+        // Execute module content in isolation
+        execute_module_content(module_source);
+        
+        // Create namespace and move definitions
+        Namespace* ns = create_namespace(namespace_name);
+        
+        // Copy variables to namespace using dynamic allocation
+        for (int i = 0; i < interpreter.var_count; i++) {
+            Variable* var = malloc(sizeof(Variable));
+            memcpy(var, &interpreter.variables[i], sizeof(Variable));
+            var->next = ns->variables;
+            ns->variables = var;
+        }
+        
+        // Copy functions to namespace using dynamic allocation  
+        for (int i = 0; i < interpreter.func_count; i++) {
+            Function* func = malloc(sizeof(Function));
+            memcpy(func, &interpreter.functions[i], sizeof(Function));
+            func->next = ns->functions;
+            ns->functions = func;
+        }
+        
+        add_namespace(ns);
+        
+        // Restore original global state
+        interpreter.var_count = old_var_count;
+        interpreter.func_count = old_func_count;
+        memcpy(interpreter.variables, old_variables, sizeof(Variable) * old_var_count);
+        memcpy(interpreter.functions, old_functions, sizeof(Function) * old_func_count);
+    } else {
+        // Old behavior: execute in global namespace
+        execute_module_content(module_source);
+    }
     
     free(module_source);
 }

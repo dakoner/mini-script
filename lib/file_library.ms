@@ -1,36 +1,41 @@
-// File Library for Mini Script Language
+// File Library for Mini Script Language - Namespace Version
 // Provides file I/O operations
 
-print("=== File Library ===");
-print("This library provides file input/output operations:");
-print("");
+// Define wrapper functions for namespace access
+function open(string filename, string mode) {
+    return fopen(filename, mode);
+}
 
-print("Available functions:");
-print("- fopen(filename, mode) - Open a file and return file handle");
-print("- fclose(handle) - Close an open file handle");
-print("- fread(handle) - Read entire content of file as string");
-print("- fwrite(handle, content) - Write string content to file");
-print("- freadline(handle) - Read one line from file");
-print("- fwriteline(handle, line) - Write one line to file");
-print("- fexists(filename) - Check if file exists");
-print("- fsize(filename) - Get file size in bytes");
-print("");
+function close(void handle) {
+    return fclose(handle);
+}
 
-print("File modes:");
-print("- 'r' - Read only (default)");
-print("- 'w' - Write only (creates new file)");
-print("- 'a' - Append (write to end of file)");
-print("- 'r+' - Read and write");
-print("");
+function read(void handle) {
+    return fread(handle);
+}
 
-print("Usage examples:");
-print("  handle = fopen('data.txt', 'r');");
-print("  content = fread(handle);");
-print("  fclose(handle);");
-print("");
-print("  handle = fopen('output.txt', 'w');");
-print("  fwrite(handle, 'Hello, World!');");
-print("  fclose(handle);");
-print("");
+function write(void handle, string content) {
+    return fwrite(handle, content);
+}
 
-print("File library loaded successfully!");
+function readline(void handle) {
+    return freadline(handle);
+}
+
+function writeline(void handle, string line) {
+    return fwriteline(handle, line);
+}
+
+function exists(string filename) {
+    return fexists(filename);
+}
+
+function size(string filename) {
+    return fsize(filename);
+}
+
+// Module metadata
+version = "2.0";
+name = "FileLibrary";
+
+print("File library v2.0 loaded with namespace support!");
