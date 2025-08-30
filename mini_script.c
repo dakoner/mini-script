@@ -168,7 +168,7 @@ typedef struct {
     char name[MAX_IDENTIFIER_LEN];
     Parameter params[MAX_PARAMS];
     int param_count;
-    char* body;
+    char* body_source;
     ValueType return_type;
 } Function;
 
@@ -257,6 +257,7 @@ Value evaluate(ASTNode* node);
 void execute_statement(ASTNode* node);
 void execute_import(const char* module_path);
 void execute_module_content(const char* content);
+Value call_user_function(Function* func, ASTNode** args, int arg_count);
 Variable* find_variable(const char* name);
 Function* find_function(const char* name);
 void print_value(Value* val);
@@ -1162,14 +1163,34 @@ ASTNode* parse_function() {
     }
     next_token();
     
-    // Function body - we'll store it as a string for now
-    int start = interpreter.pos;
-    parse_block(); // This advances the parser
-    int end = interpreter.pos;
+    // Capture function body source
+    if (interpreter.current_token.type != TOKEN_LBRACE) {
+        error("Expected '{' to start function body");
+    }
     
-    func->body = malloc(end - start + 1);
-    strncpy(func->body, &interpreter.source[start], end - start);
-    func->body[end - start] = '\0';
+    // Skip the opening brace
+    interpreter.pos++;
+    int start_pos = interpreter.pos;
+    int brace_count = 1; // We already counted the opening brace
+    
+    // Find the matching closing brace
+    while (brace_count > 0 && interpreter.pos < strlen(interpreter.source)) {
+        if (interpreter.source[interpreter.pos] == '{') {
+            brace_count++;
+        } else if (interpreter.source[interpreter.pos] == '}') {
+            brace_count--;
+        }
+        interpreter.pos++;
+    }
+    
+    // Don't include the closing brace
+    int body_length = interpreter.pos - start_pos - 1;
+    func->body_source = malloc(body_length + 1);
+    strncpy(func->body_source, &interpreter.source[start_pos], body_length);
+    func->body_source[body_length] = '\0';
+    
+    // Update token to the position after the function body
+    next_token();
     
     return NULL; // Function declarations don't return nodes
 }
@@ -1446,8 +1467,8 @@ Value evaluate(ASTNode* node) {
                     error("Unknown function: %s", node->identifier);
                 }
             } else {
-                // User-defined function - implement later
-                error("User-defined functions not fully implemented");
+                // User-defined function call
+                result = call_user_function(func, node->args, node->arg_count);
             }
             break;
         }
@@ -1611,11 +1632,10 @@ void execute_statement(ASTNode* node) {
 
 // Function to execute module content without changing global parser state
 void execute_module_content(const char* content) {
-    // Save current global state
+    // Save current global state - source position only
     char* old_source = interpreter.source;
     int old_pos = interpreter.pos;
     int old_line = interpreter.line;
-    Token old_token = interpreter.current_token;
     
     // Temporarily set the module content (cast away const for compatibility)
     interpreter.source = (char*)content;
@@ -1635,11 +1655,11 @@ void execute_module_content(const char* content) {
         }
     }
     
-    // Restore global state
+    // Restore global state and recalculate token from exact position
     interpreter.source = old_source;
     interpreter.pos = old_pos;
     interpreter.line = old_line;
-    interpreter.current_token = old_token;
+    next_token(); // Recalculate the current token from the exact position
 }
 
 void execute_import(const char* module_path) {
@@ -1703,6 +1723,93 @@ void execute_import(const char* module_path) {
     execute_module_content(module_source);
     
     free(module_source);
+}
+
+// Function to execute function body without affecting global parser state
+void execute_function_body(const char* body_source) {
+    // Save current global state - source position only
+    char* old_source = interpreter.source;
+    int old_pos = interpreter.pos;
+    int old_line = interpreter.line;
+    
+    // Create a temporary copy of the body source with necessary context
+    interpreter.source = (char*)body_source;
+    interpreter.pos = 0;
+    interpreter.line = 1;
+    next_token();
+    
+    // Execute the function body statements
+    while (interpreter.current_token.type != TOKEN_EOF && !interpreter.has_return) {
+        ASTNode* stmt = parse_statement();
+        if (stmt) {
+            execute_statement(stmt);
+        }
+    }
+    
+    // Restore global state and recalculate token from exact position
+    interpreter.source = old_source;
+    interpreter.pos = old_pos;
+    interpreter.line = old_line;
+    next_token(); // Recalculate the current token from the exact position
+}
+
+Value call_user_function(Function* func, ASTNode** args, int arg_count) {
+    Value result;
+    result.type = TYPE_INT;
+    result.int_val = 0;
+    
+    // Check parameter count
+    if (arg_count != func->param_count) {
+        error("Function %s expects %d arguments, got %d", 
+              func->name, func->param_count, arg_count);
+    }
+    
+    // Save current variable state
+    int old_var_count = interpreter.var_count;
+    Variable old_vars[MAX_VARIABLES];
+    for (int i = 0; i < interpreter.var_count; i++) {
+        old_vars[i] = interpreter.variables[i];
+    }
+    
+    // Push function parameters as local variables
+    interpreter.stack_depth++;
+    if (interpreter.stack_depth >= MAX_STACK_DEPTH) {
+        error("Stack overflow");
+    }
+    interpreter.stack_vars[interpreter.stack_depth - 1] = 0;
+    
+    // Set up function parameters
+    for (int i = 0; i < func->param_count; i++) {
+        Value arg_value = evaluate(args[i]);
+        
+        // Add parameter as local variable
+        int idx = interpreter.stack_vars[interpreter.stack_depth - 1]++;
+        strcpy(interpreter.stack[interpreter.stack_depth - 1][idx].name, 
+               func->params[i].name);
+        interpreter.stack[interpreter.stack_depth - 1][idx].value = arg_value;
+    }
+    
+    // Save function execution state
+    int old_has_return = interpreter.has_return;
+    Value old_return_value = interpreter.return_value;
+    
+    // Execute function body
+    interpreter.has_return = 0;
+    execute_function_body(func->body_source);
+    
+    // Get return value
+    if (interpreter.has_return) {
+        result = interpreter.return_value;
+    }
+    
+    // Restore function execution state
+    interpreter.has_return = old_has_return;
+    interpreter.return_value = old_return_value;
+    
+    // Pop stack
+    interpreter.stack_depth--;
+    
+    return result;
 }
 
 // Print value utility

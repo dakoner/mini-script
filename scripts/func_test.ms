@@ -1,4 +1,4 @@
-function test_func(a, b) {
+function test_func(int a, int b) {
     return a + b;
 }
 
