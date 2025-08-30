@@ -1630,20 +1630,27 @@ void execute_statement(ASTNode* node) {
     }
 }
 
-// Function to execute module content without changing global parser state
+// Function to execute module content with minimal state interference
 void execute_module_content(const char* content) {
-    // Save current global state - source position only
-    char* old_source = interpreter.source;
-    int old_pos = interpreter.pos;
-    int old_line = interpreter.line;
+    // Save only the essential parsing context
+    char* original_source = interpreter.source;
+    int original_pos = interpreter.pos;
+    int original_line = interpreter.line;
+    Token original_token = interpreter.current_token;
     
-    // Temporarily set the module content (cast away const for compatibility)
+    // Backup current function and variable counts
+    int original_func_count = interpreter.func_count;
+    int original_var_count = interpreter.var_count;
+    
+    // Set up for module parsing - don't touch other interpreter state
     interpreter.source = (char*)content;
     interpreter.pos = 0;
     interpreter.line = 1;
+    
+    // Parse first token
     next_token();
     
-    // Execute the module statements
+    // Execute module statements
     while (interpreter.current_token.type != TOKEN_EOF) {
         if (interpreter.current_token.type == TOKEN_FUNCTION) {
             parse_function();
@@ -1655,11 +1662,14 @@ void execute_module_content(const char* content) {
         }
     }
     
-    // Restore global state and recalculate token from exact position
-    interpreter.source = old_source;
-    interpreter.pos = old_pos;
-    interpreter.line = old_line;
-    next_token(); // Recalculate the current token from the exact position
+    // Restore the parsing context exactly as it was
+    interpreter.source = original_source;
+    interpreter.pos = original_pos;
+    interpreter.line = original_line;
+    interpreter.current_token = original_token;
+    
+    // Note: Keep the functions and variables that were added during module execution
+    // They remain in interpreter.functions[] and interpreter.variables[]
 }
 
 void execute_import(const char* module_path) {
@@ -1725,20 +1735,29 @@ void execute_import(const char* module_path) {
     free(module_source);
 }
 
-// Function to execute function body without affecting global parser state
+// Function to execute function body without any parser state interference
 void execute_function_body(const char* body_source) {
-    // Save current global state - source position only
+    // Create a temporary buffer for the complete function code
+    size_t body_len = strlen(body_source);
+    char* temp_code = malloc(body_len + 20); // Extra space for wrapping
+    
+    // We'll execute the body as a complete mini-program
+    // Just execute the statements directly without changing main parser state
+    strcpy(temp_code, body_source);
+    
+    // Store the current function execution context
     char* old_source = interpreter.source;
     int old_pos = interpreter.pos;
     int old_line = interpreter.line;
+    Token old_token = interpreter.current_token;
     
-    // Create a temporary copy of the body source with necessary context
-    interpreter.source = (char*)body_source;
+    // Execute in a temporary context
+    interpreter.source = temp_code;
     interpreter.pos = 0;
     interpreter.line = 1;
     next_token();
     
-    // Execute the function body statements
+    // Execute statements until return or end
     while (interpreter.current_token.type != TOKEN_EOF && !interpreter.has_return) {
         ASTNode* stmt = parse_statement();
         if (stmt) {
@@ -1746,11 +1765,13 @@ void execute_function_body(const char* body_source) {
         }
     }
     
-    // Restore global state and recalculate token from exact position
+    // Restore the exact parser state - this time with no token copying issues
     interpreter.source = old_source;
     interpreter.pos = old_pos;
     interpreter.line = old_line;
-    next_token(); // Recalculate the current token from the exact position
+    interpreter.current_token = old_token;
+    
+    free(temp_code);
 }
 
 Value call_user_function(Function* func, ASTNode** args, int arg_count) {
