@@ -36,6 +36,7 @@ call :run_test test_13_edge_cases.ms
 call :run_test test_14_dll_loading.ms
 call :run_test test_15_large_file.ms
 call :run_test test_16_module_import.ms
+call :run_test test_17_file_operations.ms
 
 echo.
 echo ==================================================

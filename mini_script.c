@@ -79,6 +79,7 @@ typedef enum {
     TYPE_LIST,
     TYPE_MAP,
     TYPE_BOOL,
+    TYPE_FILE_HANDLE,
     TYPE_DLL_HANDLE,
     TYPE_DLL_FUNCTION
 } ValueType;
@@ -136,6 +137,7 @@ typedef struct Value {
         List* list_val;
         Map* map_val;
         int bool_val;
+        FILE* file_handle;
 #ifdef _WIN32
         HMODULE dll_handle;
         FARPROC dll_function;
@@ -1463,6 +1465,182 @@ Value evaluate(ASTNode* node) {
                                                   &node->args[1], 
                                                   node->arg_count - 1);
 #endif
+                } else if (strcmp(node->identifier, "fopen") == 0) {
+                    if (node->arg_count < 1 || node->arg_count > 2) {
+                        error("fopen() expects 1 or 2 arguments (filename, mode)");
+                    }
+                    Value filename_arg = evaluate(node->args[0]);
+                    if (filename_arg.type != TYPE_STRING) {
+                        error("fopen() expects filename as string");
+                    }
+                    
+                    char* mode = "r"; // default mode
+                    if (node->arg_count == 2) {
+                        Value mode_arg = evaluate(node->args[1]);
+                        if (mode_arg.type != TYPE_STRING) {
+                            error("fopen() expects mode as string");
+                        }
+                        mode = mode_arg.string_val;
+                    }
+                    
+                    FILE* file = fopen(filename_arg.string_val, mode);
+                    result.type = TYPE_FILE_HANDLE;
+                    result.file_handle = file;
+                    
+                } else if (strcmp(node->identifier, "fclose") == 0) {
+                    if (node->arg_count != 1) {
+                        error("fclose() expects 1 argument (file_handle)");
+                    }
+                    Value handle_arg = evaluate(node->args[0]);
+                    if (handle_arg.type != TYPE_FILE_HANDLE) {
+                        error("fclose() expects a file handle");
+                    }
+                    
+                    int close_result = 0;
+                    if (handle_arg.file_handle != NULL) {
+                        close_result = fclose(handle_arg.file_handle);
+                    }
+                    result.type = TYPE_INT;
+                    result.int_val = close_result;
+                    
+                } else if (strcmp(node->identifier, "fread") == 0) {
+                    if (node->arg_count != 1) {
+                        error("fread() expects 1 argument (file_handle)");
+                    }
+                    Value handle_arg = evaluate(node->args[0]);
+                    if (handle_arg.type != TYPE_FILE_HANDLE) {
+                        error("fread() expects a file handle");
+                    }
+                    
+                    if (handle_arg.file_handle == NULL) {
+                        error("Invalid file handle");
+                    }
+                    
+                    // Get file size
+                    fseek(handle_arg.file_handle, 0, SEEK_END);
+                    long file_size = ftell(handle_arg.file_handle);
+                    fseek(handle_arg.file_handle, 0, SEEK_SET);
+                    
+                    // Allocate buffer and read
+                    char* buffer = malloc(file_size + 1);
+                    size_t bytes_read = fread(buffer, 1, file_size, handle_arg.file_handle);
+                    buffer[bytes_read] = '\0';
+                    
+                    result.type = TYPE_STRING;
+                    result.string_val = buffer;
+                    
+                } else if (strcmp(node->identifier, "fwrite") == 0) {
+                    if (node->arg_count != 2) {
+                        error("fwrite() expects 2 arguments (file_handle, content)");
+                    }
+                    Value handle_arg = evaluate(node->args[0]);
+                    Value content_arg = evaluate(node->args[1]);
+                    
+                    if (handle_arg.type != TYPE_FILE_HANDLE) {
+                        error("fwrite() expects a file handle as first argument");
+                    }
+                    if (content_arg.type != TYPE_STRING) {
+                        error("fwrite() expects content as string");
+                    }
+                    
+                    if (handle_arg.file_handle == NULL) {
+                        error("Invalid file handle");
+                    }
+                    
+                    size_t bytes_written = fwrite(content_arg.string_val, 1, 
+                                                strlen(content_arg.string_val), 
+                                                handle_arg.file_handle);
+                    result.type = TYPE_INT;
+                    result.int_val = (int)bytes_written;
+                    
+                } else if (strcmp(node->identifier, "fexists") == 0) {
+                    if (node->arg_count != 1) {
+                        error("fexists() expects 1 argument (filename)");
+                    }
+                    Value filename_arg = evaluate(node->args[0]);
+                    if (filename_arg.type != TYPE_STRING) {
+                        error("fexists() expects filename as string");
+                    }
+                    
+                    FILE* test_file = fopen(filename_arg.string_val, "r");
+                    result.type = TYPE_BOOL;
+                    result.bool_val = (test_file != NULL);
+                    if (test_file != NULL) {
+                        fclose(test_file);
+                    }
+                    
+                } else if (strcmp(node->identifier, "freadline") == 0) {
+                    if (node->arg_count != 1) {
+                        error("freadline() expects 1 argument (file_handle)");
+                    }
+                    Value handle_arg = evaluate(node->args[0]);
+                    if (handle_arg.type != TYPE_FILE_HANDLE) {
+                        error("freadline() expects a file handle");
+                    }
+                    
+                    if (handle_arg.file_handle == NULL) {
+                        error("Invalid file handle");
+                    }
+                    
+                    char buffer[1024];
+                    if (fgets(buffer, sizeof(buffer), handle_arg.file_handle) != NULL) {
+                        // Remove trailing newline if present
+                        size_t len = strlen(buffer);
+                        if (len > 0 && buffer[len-1] == '\n') {
+                            buffer[len-1] = '\0';
+                        }
+                        
+                        char* line = malloc(strlen(buffer) + 1);
+                        strcpy(line, buffer);
+                        result.type = TYPE_STRING;
+                        result.string_val = line;
+                    } else {
+                        result.type = TYPE_STRING;
+                        result.string_val = malloc(1);
+                        result.string_val[0] = '\0';
+                    }
+                    
+                } else if (strcmp(node->identifier, "fwriteline") == 0) {
+                    if (node->arg_count != 2) {
+                        error("fwriteline() expects 2 arguments (file_handle, line)");
+                    }
+                    Value handle_arg = evaluate(node->args[0]);
+                    Value line_arg = evaluate(node->args[1]);
+                    
+                    if (handle_arg.type != TYPE_FILE_HANDLE) {
+                        error("fwriteline() expects a file handle as first argument");
+                    }
+                    if (line_arg.type != TYPE_STRING) {
+                        error("fwriteline() expects line as string");
+                    }
+                    
+                    if (handle_arg.file_handle == NULL) {
+                        error("Invalid file handle");
+                    }
+                    
+                    int chars_written = fprintf(handle_arg.file_handle, "%s\n", line_arg.string_val);
+                    result.type = TYPE_INT;
+                    result.int_val = chars_written;
+                    
+                } else if (strcmp(node->identifier, "fsize") == 0) {
+                    if (node->arg_count != 1) {
+                        error("fsize() expects 1 argument (filename)");
+                    }
+                    Value filename_arg = evaluate(node->args[0]);
+                    if (filename_arg.type != TYPE_STRING) {
+                        error("fsize() expects filename as string");
+                    }
+                    
+                    FILE* file = fopen(filename_arg.string_val, "r");
+                    long file_size = 0;
+                    if (file != NULL) {
+                        fseek(file, 0, SEEK_END);
+                        file_size = ftell(file);
+                        fclose(file);
+                    }
+                    result.type = TYPE_INT;
+                    result.int_val = (int)file_size;
+                    
                 } else {
                     error("Unknown function: %s", node->identifier);
                 }
@@ -1861,6 +2039,9 @@ void print_value(Value* val) {
             break;
         case TYPE_MAP:
             printf("{map}");
+            break;
+        case TYPE_FILE_HANDLE:
+            printf("<file_handle:0x%p>", (void*)val->file_handle);
             break;
 #ifdef _WIN32
         case TYPE_DLL_HANDLE:
