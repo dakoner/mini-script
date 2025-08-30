@@ -288,14 +288,35 @@ print(message);
 
 ### Compilation
 
-#### Using the Build Script (Windows - Recommended)
+#### Using the PowerShell Build Script (Recommended)
+```powershell
+# Build with auto-detected compiler (recommended)
+.\build.ps1
+
+# Build debug version with symbols
+.\build.ps1 -Debug
+
+# Build with specific compiler
+.\build.ps1 -Compiler vs     # Visual Studio
+.\build.ps1 -Compiler gcc    # GCC/MinGW
+.\build.ps1 -Compiler clang  # Clang
+```
+
+**The PowerShell script automatically:**
+- Detects Visual Studio 2022, GCC, or Clang compilers
+- Sets up the compiler environment
+- Compiles with optimizations and C17 standard
+- Provides enhanced error handling and troubleshooting
+- Tests the executable after compilation
+
+#### Using the Legacy Batch Script
 ```bash
 # Run the provided build script
 .\build.bat
 ```
 
 The build script automatically:
-- Locates Visual Studio 2022 Build Tools
+- Locates Visual Studio 2022 Build Tools or Community Edition
 - Sets up the compiler environment
 - Compiles with optimizations and C17 standard
 - Runs the program to show usage information
