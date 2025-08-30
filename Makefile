@@ -13,7 +13,7 @@ MKDIR = mkdir -p
 PATH_SEP = /
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -std=c17 -pedantic
+CFLAGS = -Wall -Wextra -std=c17 -pedantic -D_GNU_SOURCE
 CFLAGS_DEBUG = $(CFLAGS) -g -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
 CFLAGS_RELEASE = $(CFLAGS) -O2 -DNDEBUG -flto
 CFLAGS_PROFILE = $(CFLAGS) -O2 -g -pg

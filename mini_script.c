@@ -29,6 +29,9 @@ char* strptime_simple(const char* s, const char* format, struct tm* tm) {
     return NULL;
 }
 #define strptime strptime_simple
+#else
+// Unix/Linux includes
+#include <unistd.h>
 #endif
 
 #define MAX_TOKEN_LEN 256
