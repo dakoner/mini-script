@@ -65,6 +65,7 @@ typedef enum {
     TOKEN_NOT,
     TOKEN_SEMICOLON,
     TOKEN_COMMA,
+    TOKEN_DOT,
     TOKEN_LPAREN,
     TOKEN_RPAREN,
     TOKEN_LBRACE,
@@ -395,6 +396,7 @@ void next_token() {
         case '/': interpreter.current_token.type = TOKEN_DIVIDE; interpreter.pos++; return;
         case ';': interpreter.current_token.type = TOKEN_SEMICOLON; interpreter.pos++; return;
         case ',': interpreter.current_token.type = TOKEN_COMMA; interpreter.pos++; return;
+        case '.': interpreter.current_token.type = TOKEN_DOT; interpreter.pos++; return;
         case '(': interpreter.current_token.type = TOKEN_LPAREN; interpreter.pos++; return;
         case ')': interpreter.current_token.type = TOKEN_RPAREN; interpreter.pos++; return;
         case '{': interpreter.current_token.type = TOKEN_LBRACE; interpreter.pos++; return;
@@ -872,6 +874,20 @@ ASTNode* parse_primary() {
     if (interpreter.current_token.type == TOKEN_IDENTIFIER) {
         strcpy(node->identifier, interpreter.current_token.lexeme);
         next_token();
+        
+        // Check for dot notation (namespace.member)
+        if (interpreter.current_token.type == TOKEN_DOT) {
+            next_token(); // consume '.'
+            if (interpreter.current_token.type != TOKEN_IDENTIFIER) {
+                error("Expected identifier after '.'");
+            }
+            
+            // Create a namespace.member identifier
+            char full_name[MAX_IDENTIFIER_LEN * 2 + 2];
+            sprintf(full_name, "%s.%s", node->identifier, interpreter.current_token.lexeme);
+            strcpy(node->identifier, full_name);
+            next_token();
+        }
         
         // Check for function call
         if (interpreter.current_token.type == TOKEN_LPAREN) {
@@ -2348,12 +2364,20 @@ void execute_import_with_namespace(const char* module_path, const char* namespac
         // Save current state
         int old_var_count = interpreter.var_count;
         int old_func_count = interpreter.func_count;
-        Variable old_variables[MAX_VARIABLES];
-        Function old_functions[MAX_FUNCTIONS];
+        
+        // Dynamically allocate backup arrays to avoid stack overflow
+        Variable* old_variables = malloc(sizeof(Variable) * old_var_count);
+        Function* old_functions = malloc(sizeof(Function) * old_func_count);
         
         // Save variables and functions
         memcpy(old_variables, interpreter.variables, sizeof(Variable) * old_var_count);
-        memcpy(old_functions, interpreter.functions, sizeof(Function) * old_func_count);
+        for (int i = 0; i < old_func_count; i++) {
+            memcpy(&old_functions[i], &interpreter.functions[i], sizeof(Function));
+            // Duplicate body_source string to prevent dangling pointers
+            if (interpreter.functions[i].body_source) {
+                old_functions[i].body_source = strdup(interpreter.functions[i].body_source);
+            }
+        }
         
         // Clear current state for isolated execution
         interpreter.var_count = 0;
@@ -2379,6 +2403,10 @@ void execute_import_with_namespace(const char* module_path, const char* namespac
         for (int i = 0; i < interpreter.func_count; i++) {
             Function* func = malloc(sizeof(Function));
             memcpy(func, &interpreter.functions[i], sizeof(Function));
+            // Duplicate body_source string for namespace function
+            if (interpreter.functions[i].body_source) {
+                func->body_source = strdup(interpreter.functions[i].body_source);
+            }
             func->next = ns->functions;
             ns->functions = func;
         }
@@ -2389,7 +2417,16 @@ void execute_import_with_namespace(const char* module_path, const char* namespac
         interpreter.var_count = old_var_count;
         interpreter.func_count = old_func_count;
         memcpy(interpreter.variables, old_variables, sizeof(Variable) * old_var_count);
-        memcpy(interpreter.functions, old_functions, sizeof(Function) * old_func_count);
+        
+        // Restore functions with proper body_source handling
+        for (int i = 0; i < old_func_count; i++) {
+            memcpy(&interpreter.functions[i], &old_functions[i], sizeof(Function));
+            // Note: body_source is already duplicated in old_functions, so it's safe to copy
+        }
+        
+        // Free backup arrays
+        free(old_variables);
+        free(old_functions);
     } else {
         // Old behavior: execute in global namespace
         execute_module_content(module_source);

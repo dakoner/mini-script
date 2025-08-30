@@ -6,23 +6,23 @@ function open(string filename, string mode) {
     return fopen(filename, mode);
 }
 
-function close(void handle) {
+function close(int handle) {
     return fclose(handle);
 }
 
-function read(void handle) {
+function read(int handle) {
     return fread(handle);
 }
 
-function write(void handle, string content) {
+function write(int handle, string content) {
     return fwrite(handle, content);
 }
 
-function readline(void handle) {
+function readline(int handle) {
     return freadline(handle);
 }
 
-function writeline(void handle, string line) {
+function writeline(int handle, string line) {
     return fwriteline(handle, line);
 }
 
