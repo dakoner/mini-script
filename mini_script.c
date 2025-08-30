@@ -3,9 +3,31 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <windows.h>
+// Windows doesn't have strptime, provide a simple implementation
+char* strptime_simple(const char* s, const char* format, struct tm* tm) {
+    // Simple implementation for basic formats
+    if (strcmp(format, "%Y-%m-%d") == 0) {
+        if (sscanf(s, "%d-%d-%d", &tm->tm_year, &tm->tm_mon, &tm->tm_mday) == 3) {
+            tm->tm_year -= 1900;
+            tm->tm_mon -= 1;
+            return (char*)s + strlen(s);
+        }
+    } else if (strcmp(format, "%Y-%m-%d %H:%M:%S") == 0) {
+        if (sscanf(s, "%d-%d-%d %d:%d:%d", 
+                   &tm->tm_year, &tm->tm_mon, &tm->tm_mday,
+                   &tm->tm_hour, &tm->tm_min, &tm->tm_sec) == 6) {
+            tm->tm_year -= 1900;
+            tm->tm_mon -= 1;
+            return (char*)s + strlen(s);
+        }
+    }
+    return NULL;
+}
+#define strptime strptime_simple
 #endif
 
 #define MAX_TOKEN_LEN 256
@@ -1640,6 +1662,230 @@ Value evaluate(ASTNode* node) {
                     }
                     result.type = TYPE_INT;
                     result.int_val = (int)file_size;
+                    
+                } else if (strcmp(node->identifier, "time_now") == 0) {
+                    if (node->arg_count != 0) {
+                        error("time_now() expects no arguments");
+                    }
+                    
+                    time_t current_time = time(NULL);
+                    result.type = TYPE_INT;
+                    result.int_val = (int)current_time;
+                    
+                } else if (strcmp(node->identifier, "time_format") == 0) {
+                    if (node->arg_count < 1 || node->arg_count > 2) {
+                        error("time_format() expects 1 or 2 arguments (timestamp, format)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_format() expects timestamp as integer");
+                    }
+                    
+                    char* format = "%Y-%m-%d %H:%M:%S"; // default format
+                    if (node->arg_count == 2) {
+                        Value format_arg = evaluate(node->args[1]);
+                        if (format_arg.type != TYPE_STRING) {
+                            error("time_format() expects format as string");
+                        }
+                        format = format_arg.string_val;
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    char* buffer = malloc(256);
+                    strftime(buffer, 256, format, timeinfo);
+                    
+                    result.type = TYPE_STRING;
+                    result.string_val = buffer;
+                    
+                } else if (strcmp(node->identifier, "time_parse") == 0) {
+                    if (node->arg_count != 2) {
+                        error("time_parse() expects 2 arguments (date_string, format)");
+                    }
+                    
+                    Value date_str_arg = evaluate(node->args[0]);
+                    Value format_arg = evaluate(node->args[1]);
+                    
+                    if (date_str_arg.type != TYPE_STRING || format_arg.type != TYPE_STRING) {
+                        error("time_parse() expects string arguments");
+                    }
+                    
+                    struct tm timeinfo = {0};
+                    char* parse_result = strptime(date_str_arg.string_val, format_arg.string_val, &timeinfo);
+                    
+                    if (parse_result == NULL) {
+                        result.type = TYPE_INT;
+                        result.int_val = 0; // Failed to parse
+                    } else {
+                        time_t timestamp = mktime(&timeinfo);
+                        result.type = TYPE_INT;
+                        result.int_val = (int)timestamp;
+                    }
+                    
+                } else if (strcmp(node->identifier, "time_year") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_year() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_year() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_year + 1900;
+                    
+                } else if (strcmp(node->identifier, "time_month") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_month() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_month() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_mon + 1; // 1-12 instead of 0-11
+                    
+                } else if (strcmp(node->identifier, "time_day") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_day() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_day() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_mday;
+                    
+                } else if (strcmp(node->identifier, "time_hour") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_hour() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_hour() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_hour;
+                    
+                } else if (strcmp(node->identifier, "time_minute") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_minute() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_minute() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_min;
+                    
+                } else if (strcmp(node->identifier, "time_second") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_second() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_second() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_sec;
+                    
+                } else if (strcmp(node->identifier, "time_weekday") == 0) {
+                    if (node->arg_count != 1) {
+                        error("time_weekday() expects 1 argument (timestamp)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    if (timestamp_arg.type != TYPE_INT) {
+                        error("time_weekday() expects timestamp as integer");
+                    }
+                    
+                    time_t timestamp = (time_t)timestamp_arg.int_val;
+                    struct tm* timeinfo = localtime(&timestamp);
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timeinfo->tm_wday; // 0=Sunday, 1=Monday, etc.
+                    
+                } else if (strcmp(node->identifier, "time_add") == 0) {
+                    if (node->arg_count != 2) {
+                        error("time_add() expects 2 arguments (timestamp, seconds)");
+                    }
+                    
+                    Value timestamp_arg = evaluate(node->args[0]);
+                    Value seconds_arg = evaluate(node->args[1]);
+                    
+                    if (timestamp_arg.type != TYPE_INT || seconds_arg.type != TYPE_INT) {
+                        error("time_add() expects integer arguments");
+                    }
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = timestamp_arg.int_val + seconds_arg.int_val;
+                    
+                } else if (strcmp(node->identifier, "time_diff") == 0) {
+                    if (node->arg_count != 2) {
+                        error("time_diff() expects 2 arguments (timestamp1, timestamp2)");
+                    }
+                    
+                    Value time1_arg = evaluate(node->args[0]);
+                    Value time2_arg = evaluate(node->args[1]);
+                    
+                    if (time1_arg.type != TYPE_INT || time2_arg.type != TYPE_INT) {
+                        error("time_diff() expects integer arguments");
+                    }
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = time1_arg.int_val - time2_arg.int_val;
+                    
+                } else if (strcmp(node->identifier, "sleep") == 0) {
+                    if (node->arg_count != 1) {
+                        error("sleep() expects 1 argument (seconds)");
+                    }
+                    
+                    Value seconds_arg = evaluate(node->args[0]);
+                    if (seconds_arg.type != TYPE_INT) {
+                        error("sleep() expects seconds as integer");
+                    }
+                    
+                    if (seconds_arg.int_val > 0) {
+#ifdef _WIN32
+                        Sleep(seconds_arg.int_val * 1000); // Windows Sleep takes milliseconds
+#else
+                        sleep(seconds_arg.int_val); // Unix sleep takes seconds
+#endif
+                    }
+                    
+                    result.type = TYPE_INT;
+                    result.int_val = 0;
                     
                 } else {
                     error("Unknown function: %s", node->identifier);
