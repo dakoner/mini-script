@@ -1237,10 +1237,20 @@ Stmt* statement(Parser* parser) {
 }
 
 Stmt** parse(Parser* parser) {
-    Stmt** statements = malloc(sizeof(Stmt*) * 100);
+    int capacity = 100;
+    Stmt** statements = malloc(sizeof(Stmt*) * capacity);
     int stmt_count = 0;
     
     while (!parser_is_at_end(parser)) {
+        // Check if we need to grow the array
+        if (stmt_count >= capacity - 1) {  // -1 to leave room for NULL terminator
+            capacity *= 2;
+            statements = realloc(statements, sizeof(Stmt*) * capacity);
+            if (!statements) {
+                fprintf(stderr, "Error: Out of memory while parsing\n");
+                exit(1);
+            }
+        }
         statements[stmt_count++] = statement(parser);
     }
     
@@ -1560,7 +1570,7 @@ Value evaluate_call(Interpreter* interpreter, Expr* expr) {
                 
                 // Create new environment for function scope
                 Environment* previous = interpreter->environment;
-                Environment* func_env = create_environment(interpreter->globals);
+                Environment* func_env = create_environment(interpreter->environment);
                 interpreter->environment = func_env;
                 
                 // Bind parameters to arguments
@@ -1938,7 +1948,8 @@ void run_file(char* path) {
     // Find tests/ marker for relative display
     char* tests_marker = strstr(display_path, "tests/");
     if (tests_marker != NULL) {
-        strcpy(display_path, tests_marker);
+        // Use memmove to handle overlapping memory safely
+        memmove(display_path, tests_marker, strlen(tests_marker) + 1);
     }
     
     printf("Executing: %s\n", display_path);
