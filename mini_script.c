@@ -2010,6 +2010,7 @@ Value evaluate_call(Interpreter* interpreter, Expr* expr) {
                 Value result;
                 if (interpreter->has_returned) {
                     result = interpreter->return_value;
+                    interpreter->has_returned = false;  // Reset the flag
                 } else {
                     result.type = VALUE_NIL;
                 }
