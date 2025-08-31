@@ -275,6 +275,7 @@ typedef struct Interpreter {
     int builtin_count;
     Value return_value;
     bool has_returned;
+    int current_line;
 } Interpreter;
 
 // =============================================================================
@@ -650,6 +651,23 @@ Stmt* statement(Parser* parser);
 Value evaluate_expr(struct Interpreter* interpreter, Expr* expr);
 Expr* finish_call(Parser* parser, Expr* callee);
 void execute_stmt(struct Interpreter* interpreter, Stmt* stmt);
+void runtime_error(struct Interpreter* interpreter, const char* format, ...);
+
+void parse_error(Parser* parser, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    
+    printf("Parse Error");
+    if (parser && parser->filename && parser->current >= 0 && parser->current < parser->token_count) {
+        printf(" at line %d in %s", parser->tokens[parser->current].line, parser->filename);
+    }
+    printf(": ");
+    vprintf(format, args);
+    printf("\n");
+    
+    va_end(args);
+    exit(1);
+}
 
 Expr* create_literal_expr(Value value) {
     Expr* expr = malloc(sizeof(Expr));
@@ -726,8 +744,7 @@ Expr* primary(Parser* parser) {
     if (parser_match(parser, 1, MS_TOKEN_LPAREN)) {
         Expr* expr = expression(parser);
         if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-            printf("Parse Error: Expect ')' after expression.\n");
-            exit(1);
+            parse_error(parser, "Expect ')' after expression");
         }
         
         Expr* grouping = malloc(sizeof(Expr));
@@ -748,8 +765,7 @@ Expr* primary(Parser* parser) {
         }
         
         if (!parser_match(parser, 1, MS_TOKEN_RBRACKET)) {
-            printf("Parse Error: Expect ']' after list elements.\n");
-            exit(1);
+            parse_error(parser, "Expect ']' after list elements");
         }
         
         Expr* list_literal = malloc(sizeof(Expr));
@@ -759,8 +775,9 @@ Expr* primary(Parser* parser) {
         return list_literal;
     }
     
-    printf("Parse Error: Expect expression.\n");
-    exit(1);
+    parse_error(parser, "Expect expression");
+    // This line will never be reached, but the compiler doesn't know that
+    return NULL;
 }
 
 Expr* call(Parser* parser) {
@@ -771,12 +788,9 @@ Expr* call(Parser* parser) {
             expr = finish_call(parser, expr);
         } else if (parser_match(parser, 1, MS_TOKEN_LBRACKET)) {
             Expr* index = expression(parser);
-            if (!parser_match(parser, 1, MS_TOKEN_RBRACKET)) {
-                printf("Parse Error: Expect ']' after index.\n");
-                exit(1);
-            }
-            
-            Expr* get_expr = malloc(sizeof(Expr));
+                if (!parser_match(parser, 1, MS_TOKEN_RBRACKET)) {
+                    parse_error(parser, "Expect ']' after index");
+                }            Expr* get_expr = malloc(sizeof(Expr));
             get_expr->type = EXPR_GET;
             get_expr->get.object = expr;
             get_expr->get.index = index;
@@ -800,8 +814,7 @@ Expr* finish_call(Parser* parser, Expr* callee) {
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-        printf("Parse Error: Expect ')' after arguments.\n");
-        exit(1);
+        parse_error(parser, "Expect ')' after arguments");
     }
     
     Expr* call_expr = malloc(sizeof(Expr));
@@ -922,8 +935,7 @@ Expr* assignment(Parser* parser) {
             return create_assign_expr(name, value);
         }
         
-        printf("Parse Error: Invalid assignment target.\n");
-        exit(1);
+        parse_error(parser, "Invalid assignment target");
     }
     
     return expr;
@@ -936,8 +948,7 @@ Expr* expression(Parser* parser) {
 Stmt* expression_statement(Parser* parser) {
     Expr* expr = expression(parser);
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
-        printf("Parse Error: Expect ';' after expression.\n");
-        exit(1);
+        parse_error(parser, "Expect ';' after expression");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
@@ -957,8 +968,7 @@ Stmt* print_statement(Parser* parser) {
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
-        printf("Parse Error: Expect ';' after value.\n");
-        exit(1);
+        parse_error(parser, "Expect ';' after value");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
@@ -971,8 +981,7 @@ Stmt* print_statement(Parser* parser) {
 Stmt* var_statement(Parser* parser) {
     Token* name = NULL;
     if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
-        printf("Parse Error: Expect variable name.\n");
-        exit(1);
+        parse_error(parser, "Expect variable name");
     }
     name = parser_previous(parser);
     
@@ -982,8 +991,7 @@ Stmt* var_statement(Parser* parser) {
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
-        printf("Parse Error: Expect ';' after variable declaration.\n");
-        exit(1);
+        parse_error(parser, "Expect ';' after variable declaration");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
@@ -997,15 +1005,13 @@ Stmt* assert_statement(Parser* parser) {
     Expr* condition = expression(parser);
     
     if (!parser_match(parser, 1, MS_TOKEN_COMMA)) {
-        printf("Parse Error: Expect ',' after assert condition.\n");
-        exit(1);
+        parse_error(parser, "Expect ',' after assert condition");
     }
     
     Expr* message = expression(parser);
     
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
-        printf("Parse Error: Expect ';' after assert message.\n");
-        exit(1);
+        parse_error(parser, "Expect ';' after assert message");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
@@ -1017,15 +1023,13 @@ Stmt* assert_statement(Parser* parser) {
 
 Stmt* if_statement(Parser* parser) {
     if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
-        printf("Parse Error: Expect '(' after 'if'.\n");
-        exit(1);
+        parse_error(parser, "Expect '(' after 'if'");
     }
     
     Expr* condition = expression(parser);
     
     if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-        printf("Parse Error: Expect ')' after if condition.\n");
-        exit(1);
+        parse_error(parser, "Expect ')' after if condition");
     }
     
     Stmt* then_branch = statement(parser);
@@ -1045,13 +1049,11 @@ Stmt* if_statement(Parser* parser) {
 
 Stmt* while_statement(Parser* parser) {
     if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
-        printf("Parse Error: Expect '(' after 'while'.\n");
-        exit(1);
+        parse_error(parser, "Expect '(' after 'while'");
     }
     Expr* condition = expression(parser);
     if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-        printf("Parse Error: Expect ')' after while condition.\n");
-        exit(1);
+        parse_error(parser, "Expect ')' after while condition");
     }
     Stmt* body = statement(parser);
     
@@ -1064,8 +1066,7 @@ Stmt* while_statement(Parser* parser) {
 
 Stmt* for_statement(Parser* parser) {
     if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
-        printf("Parse Error: Expect '(' after 'for'.\n");
-        exit(1);
+        parse_error(parser, "Expect '(' after 'for'");
     }
     
     // Initializer (can be var declaration or expression statement)
@@ -1079,15 +1080,13 @@ Stmt* for_statement(Parser* parser) {
     // Condition
     Expr* condition = expression(parser);
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
-        printf("Parse Error: Expect ';' after for loop condition.\n");
-        exit(1);
+        parse_error(parser, "Expect ';' after for loop condition");
     }
     
     // Increment
     Expr* increment = expression(parser);
     if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-        printf("Parse Error: Expect ')' after for clauses.\n");
-        exit(1);
+        parse_error(parser, "Expect ')' after for clauses");
     }
     
     // Body
@@ -1104,14 +1103,12 @@ Stmt* for_statement(Parser* parser) {
 
 Stmt* function_statement(Parser* parser) {
     if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
-        printf("Parse Error: Expect function name.\n");
-        exit(1);
+        parse_error(parser, "Expect function name");
     }
     Token* name = parser_previous(parser);
     
     if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
-        printf("Parse Error: Expect '(' after function name.\n");
-        exit(1);
+        parse_error(parser, "Expect '(' after function name");
     }
     
     // Parse parameters
@@ -1121,21 +1118,18 @@ Stmt* function_statement(Parser* parser) {
     if (!parser_check(parser, MS_TOKEN_RPAREN)) {
         do {
             if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
-                printf("Parse Error: Expect parameter name.\n");
-                exit(1);
+                parse_error(parser, "Expect parameter name");
             }
             params[param_count++] = parser_previous(parser);
         } while (parser_match(parser, 1, MS_TOKEN_COMMA));
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
-        printf("Parse Error: Expect ')' after parameters.\n");
-        exit(1);
+        parse_error(parser, "Expect ')' after parameters");
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_LBRACE)) {
-        printf("Parse Error: Expect '{' before function body.\n");
-        exit(1);
+        parse_error(parser, "Expect '{' before function body");
     }
     
     // Parse function body
@@ -1147,8 +1141,7 @@ Stmt* function_statement(Parser* parser) {
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_RBRACE)) {
-        printf("Parse Error: Expect '}' after function body.\n");
-        exit(1);
+        parse_error(parser, "Expect '}' after function body");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
@@ -1172,8 +1165,7 @@ Stmt* return_statement(Parser* parser) {
     if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
         // Semicolon is optional before }
         if (!parser_check(parser, MS_TOKEN_RBRACE)) {
-            printf("Parse Error: Expect ';' after return value.\n");
-            exit(1);
+            parse_error(parser, "Expect ';' after return value");
         }
     }
     
@@ -1193,14 +1185,31 @@ Stmt* block_statement(Parser* parser) {
     }
     
     if (!parser_match(parser, 1, MS_TOKEN_RBRACE)) {
-        printf("Parse Error: Expect '}' after block.\n");
-        exit(1);
+        parse_error(parser, "Expect '}' after block");
     }
     
     Stmt* stmt = malloc(sizeof(Stmt));
     stmt->type = STMT_BLOCK;
     stmt->block.statements = statements;
     stmt->block.stmt_count = stmt_count;
+    return stmt;
+}
+
+Stmt* import_statement(Parser* parser) {
+    if (!parser_check(parser, MS_TOKEN_STRING)) {
+        parse_error(parser, "Expect string literal for import path");
+    }
+    
+    Token* path_token = parser_advance(parser);
+    
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        parse_error(parser, "Expect ';' after import statement");
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_IMPORT;
+    stmt->import.path_token = path_token;
+    stmt->import.namespace = NULL; // For basic import, no namespace
     return stmt;
 }
 
@@ -1225,6 +1234,9 @@ Stmt* statement(Parser* parser) {
     }
     if (parser_match(parser, 1, MS_TOKEN_FUNCTION)) {
         return function_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_IMPORT)) {
+        return import_statement(parser);
     }
     if (parser_match(parser, 1, MS_TOKEN_RETURN)) {
         return return_statement(parser);
@@ -1330,6 +1342,23 @@ Value env_get(Environment* env, char* name) {
     exit(1);
 }
 
+Value env_get_with_error(Interpreter* interpreter, Environment* env, char* name) {
+    for (int i = 0; i < env->count; i++) {
+        if (strcmp(env->names[i], name) == 0) {
+            return env->values[i];
+        }
+    }
+    
+    if (env->enclosing != NULL) {
+        return env_get_with_error(interpreter, env->enclosing, name);
+    }
+    
+    runtime_error(interpreter, "Undefined variable '%s'", name);
+    // This line will never be reached, but the compiler doesn't know that
+    Value dummy = {0};
+    return dummy;
+}
+
 char* value_to_string(Value value) {
     static char buffer[256];
     
@@ -1354,6 +1383,9 @@ char* value_to_string(Value value) {
             return value.value.string;
         case VALUE_CHAR:
             sprintf(buffer, "%c", value.value.character);
+            break;
+        case VALUE_FILE:
+            sprintf(buffer, "<file handle>");
             break;
         default:
             strcpy(buffer, "unknown");
@@ -1400,6 +1432,12 @@ char* value_to_string_alloc(Value value) {
                 sprintf(result, "%c", value.value.character);
                 return result;
             }
+        case VALUE_FILE:
+            {
+                char* result = malloc(15);
+                strcpy(result, "<file handle>");
+                return result;
+            }
         default:
             {
                 char* result = malloc(8);
@@ -1407,6 +1445,22 @@ char* value_to_string_alloc(Value value) {
                 return result;
             }
     }
+}
+
+void runtime_error(Interpreter* interpreter, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    
+    printf("Runtime Error");
+    if (interpreter && interpreter->filename && interpreter->current_line > 0) {
+        printf(" at line %d in %s", interpreter->current_line, interpreter->filename);
+    }
+    printf(": ");
+    vprintf(format, args);
+    printf("\n");
+    
+    va_end(args);
+    exit(1);
 }
 
 bool is_truthy(Value value) {
@@ -1427,10 +1481,12 @@ Value evaluate_literal(Interpreter* interpreter, Expr* expr) {
 }
 
 Value evaluate_variable(Interpreter* interpreter, Expr* expr) {
-    return env_get(interpreter->environment, expr->variable.name->lexeme);
+    interpreter->current_line = expr->variable.name->line;
+    return env_get_with_error(interpreter, interpreter->environment, expr->variable.name->lexeme);
 }
 
 Value evaluate_binary(Interpreter* interpreter, Expr* expr) {
+    interpreter->current_line = expr->binary.operator->line;
     Value left = evaluate_expr(interpreter, expr->binary.left);
     Value right = evaluate_expr(interpreter, expr->binary.right);
     MSTokenType op = expr->binary.operator->type;
@@ -1459,8 +1515,7 @@ Value evaluate_binary(Interpreter* interpreter, Expr* expr) {
         result.value.number = left.value.number * right.value.number;
     } else if (op == MS_TOKEN_DIVIDE) {
         if (right.value.number == 0) {
-            printf("Runtime Error: Division by zero.\n");
-            exit(1);
+            runtime_error(interpreter, "Division by zero");
         }
         result.value.number = left.value.number / right.value.number;
     } else if (op == MS_TOKEN_GREATER) {
@@ -1479,6 +1534,8 @@ Value evaluate_binary(Interpreter* interpreter, Expr* expr) {
         result.type = VALUE_BOOL;
         if (left.type != right.type) {
             result.value.boolean = false;
+        } else if (left.type == VALUE_NIL) {
+            result.value.boolean = true;  // nil == nil is always true
         } else if (left.type == VALUE_NUMBER) {
             result.value.boolean = left.value.number == right.value.number;
         } else if (left.type == VALUE_BOOL) {
@@ -1492,6 +1549,8 @@ Value evaluate_binary(Interpreter* interpreter, Expr* expr) {
         result.type = VALUE_BOOL;
         if (left.type != right.type) {
             result.value.boolean = true;
+        } else if (left.type == VALUE_NIL) {
+            result.value.boolean = false;  // nil != nil is always false
         } else if (left.type == VALUE_NUMBER) {
             result.value.boolean = left.value.number != right.value.number;
         } else if (left.type == VALUE_BOOL) {
@@ -1530,14 +1589,18 @@ Value evaluate_assign(Interpreter* interpreter, Expr* expr) {
 }
 
 Value evaluate_call(Interpreter* interpreter, Expr* expr) {
+    // Use callee line number for error reporting since paren might not be set
+    if (expr->call.callee->type == EXPR_VARIABLE) {
+        interpreter->current_line = expr->call.callee->variable.name->line;
+    }
+    
     // For now, only handle built-in functions by name
     if (expr->call.callee->type == EXPR_VARIABLE) {
         char* func_name = expr->call.callee->variable.name->lexeme;
         
         if (strcmp(func_name, "len") == 0) {
             if (expr->call.arg_count != 1) {
-                printf("Runtime Error: len() expects exactly 1 argument.\n");
-                exit(1);
+                runtime_error(interpreter, "len() expects exactly 1 argument");
             }
             
             Value arg = evaluate_expr(interpreter, expr->call.arguments[0]);
@@ -1549,10 +1612,366 @@ Value evaluate_call(Interpreter* interpreter, Expr* expr) {
             } else if (arg.type == VALUE_LIST) {
                 result.value.number = arg.list_size;
             } else {
-                printf("Runtime Error: len() expects a string or list argument.\n");
-                exit(1);
+                runtime_error(interpreter, "len() expects a string or list argument");
             }
             
+            return result;
+        } else if (strcmp(func_name, "fopen") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "fopen() expects exactly 2 arguments");
+            }
+            
+            Value filename_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value mode_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (filename_val.type != VALUE_STRING || mode_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "fopen() expects string arguments");
+            }
+            
+            FILE* handle = fopen(filename_val.value.string, mode_val.value.string);
+            Value result;
+            if (handle == NULL) {
+                result.type = VALUE_NIL;
+            } else {
+                result.type = VALUE_FILE;
+                result.value.file_handle = handle;
+            }
+            
+            return result;
+        } else if (strcmp(func_name, "fclose") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "fclose() expects exactly 1 argument");
+            }
+            
+            Value handle_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (handle_val.type != VALUE_FILE) {
+                runtime_error(interpreter, "fclose() expects a file handle");
+            }
+            
+            int close_result = fclose(handle_val.value.file_handle);
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)close_result;
+            return result;
+        } else if (strcmp(func_name, "fwrite") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "fwrite() expects exactly 2 arguments");
+            }
+            
+            Value handle_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value content_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (handle_val.type != VALUE_FILE) {
+                runtime_error(interpreter, "fwrite() expects a file handle as first argument");
+            }
+            
+            if (content_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "fwrite() expects a string as second argument");
+            }
+            
+            size_t bytes_written = fprintf(handle_val.value.file_handle, "%s", content_val.value.string);
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)bytes_written;
+            return result;
+        } else if (strcmp(func_name, "fread") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "fread() expects exactly 1 argument");
+            }
+            
+            Value handle_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (handle_val.type != VALUE_FILE) {
+                runtime_error(interpreter, "fread() expects a file handle");
+            }
+            
+            // Read entire file content
+            fseek(handle_val.value.file_handle, 0, SEEK_END);
+            long length = ftell(handle_val.value.file_handle);
+            fseek(handle_val.value.file_handle, 0, SEEK_SET);
+            
+            char* buffer = malloc(length + 1);
+            fread(buffer, 1, length, handle_val.value.file_handle);
+            buffer[length] = '\0';
+            
+            Value result;
+            result.type = VALUE_STRING;
+            result.value.string = buffer;
+            return result;
+        } else if (strcmp(func_name, "freadline") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "freadline() expects exactly 1 argument");
+            }
+            
+            Value handle_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (handle_val.type != VALUE_FILE) {
+                runtime_error(interpreter, "freadline() expects a file handle");
+            }
+            
+            char buffer[1024];
+            if (fgets(buffer, sizeof(buffer), handle_val.value.file_handle) != NULL) {
+                // Remove trailing newline characters (\r\n or \n)
+                size_t len = strlen(buffer);
+                while (len > 0 && (buffer[len-1] == '\n' || buffer[len-1] == '\r')) {
+                    buffer[len-1] = '\0';
+                    len--;
+                }
+                
+                Value result;
+                result.type = VALUE_STRING;
+                result.value.string = strdup(buffer);
+                return result;
+            } else {
+                Value result;
+                result.type = VALUE_NIL;
+                return result;
+            }
+        } else if (strcmp(func_name, "fwriteline") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "fwriteline() expects exactly 2 arguments");
+            }
+            
+            Value handle_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value line_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (handle_val.type != VALUE_FILE) {
+                runtime_error(interpreter, "fwriteline() expects a file handle as first argument");
+            }
+            
+            if (line_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "fwriteline() expects a string as second argument");
+            }
+            
+            fprintf(handle_val.value.file_handle, "%s\n", line_val.value.string);
+            Value result;
+            result.type = VALUE_NIL;
+            return result;
+        } else if (strcmp(func_name, "fexists") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "fexists() expects exactly 1 argument");
+            }
+            
+            Value filename_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (filename_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "fexists() expects a string argument");
+            }
+            
+            FILE* test_file = fopen(filename_val.value.string, "r");
+            Value result;
+            result.type = VALUE_BOOL;
+            
+            if (test_file != NULL) {
+                fclose(test_file);
+                result.value.boolean = true;
+            } else {
+                result.value.boolean = false;
+            }
+            
+            return result;
+        } else if (strcmp(func_name, "time_now") == 0) {
+            if (expr->call.arg_count != 0) {
+                runtime_error(interpreter, "time_now() expects no arguments");
+            }
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)time(NULL);
+            return result;
+        } else if (strcmp(func_name, "time_format") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "time_format() expects exactly 2 arguments");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value format_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (timestamp_val.type != VALUE_NUMBER || format_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "time_format() expects number and string arguments");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            char buffer[256];
+            strftime(buffer, sizeof(buffer), format_val.value.string, tm_info);
+            
+            Value result;
+            result.type = VALUE_STRING;
+            result.value.string = strdup(buffer);
+            return result;
+        } else if (strcmp(func_name, "time_parse") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "time_parse() expects exactly 2 arguments");
+            }
+            
+            Value datestr_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value format_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (datestr_val.type != VALUE_STRING || format_val.type != VALUE_STRING) {
+                runtime_error(interpreter, "time_parse() expects string arguments");
+            }
+            
+            struct tm tm_info = {0};
+            if (strptime(datestr_val.value.string, format_val.value.string, &tm_info) == NULL) {
+                Value result;
+                result.type = VALUE_NIL;
+                return result;
+            }
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)timegm(&tm_info);
+            return result;
+        } else if (strcmp(func_name, "time_year") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_year() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_year() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)(tm_info->tm_year + 1900);
+            return result;
+        } else if (strcmp(func_name, "time_month") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_month() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_month() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)(tm_info->tm_mon + 1);
+            return result;
+        } else if (strcmp(func_name, "time_day") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_day() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_day() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)tm_info->tm_mday;
+            return result;
+        } else if (strcmp(func_name, "time_hour") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_hour() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_hour() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)tm_info->tm_hour;
+            return result;
+        } else if (strcmp(func_name, "time_minute") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_minute() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_minute() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)tm_info->tm_min;
+            return result;
+        } else if (strcmp(func_name, "time_second") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_second() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_second() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = (double)tm_info->tm_sec;
+            return result;
+        } else if (strcmp(func_name, "time_weekday") == 0) {
+            if (expr->call.arg_count != 1) {
+                runtime_error(interpreter, "time_weekday() expects exactly 1 argument");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            if (timestamp_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_weekday() expects a number argument");
+            }
+            
+            time_t timestamp = (time_t)timestamp_val.value.number;
+            struct tm *tm_info = gmtime(&timestamp);
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            // Convert from Sunday=0 to Monday=0 format
+            result.value.number = (double)((tm_info->tm_wday + 6) % 7);
+            return result;
+        } else if (strcmp(func_name, "time_add") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "time_add() expects exactly 2 arguments");
+            }
+            
+            Value timestamp_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value seconds_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (timestamp_val.type != VALUE_NUMBER || seconds_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_add() expects number arguments");
+            }
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = timestamp_val.value.number + seconds_val.value.number;
+            return result;
+        } else if (strcmp(func_name, "time_diff") == 0) {
+            if (expr->call.arg_count != 2) {
+                runtime_error(interpreter, "time_diff() expects exactly 2 arguments");
+            }
+            
+            Value time1_val = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value time2_val = evaluate_expr(interpreter, expr->call.arguments[1]);
+            
+            if (time1_val.type != VALUE_NUMBER || time2_val.type != VALUE_NUMBER) {
+                runtime_error(interpreter, "time_diff() expects number arguments");
+            }
+            
+            Value result;
+            result.type = VALUE_NUMBER;
+            result.value.number = time1_val.value.number - time2_val.value.number;
             return result;
         } else {
             // Check if it's a user-defined function
@@ -1563,9 +1982,8 @@ Value evaluate_call(Interpreter* interpreter, Expr* expr) {
                 
                 // Check argument count
                 if (expr->call.arg_count != func_stmt->function.param_count) {
-                    printf("Runtime Error: Function '%s' expects %d arguments, got %d.\n",
+                    runtime_error(interpreter, "Function '%s' expects %d arguments, got %d",
                            func_name, func_stmt->function.param_count, expr->call.arg_count);
-                    exit(1);
                 }
                 
                 // Create new environment for function scope
@@ -1601,14 +2019,15 @@ Value evaluate_call(Interpreter* interpreter, Expr* expr) {
                 
                 return result;
             } else {
-                printf("Runtime Error: Unknown function '%s'.\n", func_name);
-                exit(1);
+                runtime_error(interpreter, "Unknown function '%s'", func_name);
             }
         }
     }
     
-    printf("Runtime Error: Can only call functions.\n");
-    exit(1);
+    runtime_error(interpreter, "Can only call functions");
+    // This line will never be reached, but the compiler doesn't know that
+    Value dummy = {0};
+    return dummy;
 }
 
 Value evaluate_logical(Interpreter* interpreter, Expr* expr) {
@@ -1665,20 +2084,17 @@ Value evaluate_get(Interpreter* interpreter, Expr* expr) {
     Value object = evaluate_expr(interpreter, expr->get.object);
     
     if (object.type != VALUE_LIST) {
-        printf("Runtime Error: Only lists can be indexed.\n");
-        exit(1);
+        runtime_error(interpreter, "Only lists can be indexed");
     }
     
     Value index_value = evaluate_expr(interpreter, expr->get.index);
     if (index_value.type != VALUE_NUMBER) {
-        printf("Runtime Error: List index must be a number.\n");
-        exit(1);
+        runtime_error(interpreter, "List index must be a number");
     }
     
     int index = (int)index_value.value.number;
     if (index < 0 || index >= object.list_size) {
-        printf("Runtime Error: List index out of bounds.\n");
-        exit(1);
+        runtime_error(interpreter, "List index out of bounds");
     }
     
     // Return the value from the stored literal expression
@@ -1689,20 +2105,17 @@ Value evaluate_set(Interpreter* interpreter, Expr* expr) {
     Value object = evaluate_expr(interpreter, expr->set.object);
     
     if (object.type != VALUE_LIST) {
-        printf("Runtime Error: Only lists can be indexed for assignment.\n");
-        exit(1);
+        runtime_error(interpreter, "Only lists can be indexed for assignment");
     }
     
     Value index_value = evaluate_expr(interpreter, expr->set.index);
     if (index_value.type != VALUE_NUMBER) {
-        printf("Runtime Error: List index must be a number.\n");
-        exit(1);
+        runtime_error(interpreter, "List index must be a number");
     }
     
     int index = (int)index_value.value.number;
     if (index < 0 || index >= object.list_size) {
-        printf("Runtime Error: List index out of bounds.\n");
-        exit(1);
+        runtime_error(interpreter, "List index out of bounds");
     }
     
     Value new_value = evaluate_expr(interpreter, expr->set.value);
@@ -1741,8 +2154,10 @@ Value evaluate_expr(Interpreter* interpreter, Expr* expr) {
         case EXPR_SET:
             return evaluate_set(interpreter, expr);
         default:
-            printf("Runtime Error: Unknown expression type.\n");
-            exit(1);
+            runtime_error(interpreter, "Unknown expression type");
+            // This line will never be reached, but the compiler doesn't know that
+            Value dummy = {0};
+            return dummy;
     }
 }
 
@@ -1775,8 +2190,7 @@ void execute_assert_stmt(Interpreter* interpreter, Stmt* stmt) {
     
     if (!is_truthy(condition)) {
         Value message = evaluate_expr(interpreter, stmt->assert_stmt.message);
-        printf("Runtime Error: Assertion failed: %s\n", value_to_string(message));
-        exit(1);
+        runtime_error(interpreter, "Assertion failed: %s", value_to_string(message));
     }
 }
 
@@ -1839,6 +2253,65 @@ void execute_function_stmt(Interpreter* interpreter, Stmt* stmt) {
     env_define(interpreter->environment, stmt->function.name->lexeme, func_value);
 }
 
+void execute_import_stmt(Interpreter* interpreter, Stmt* stmt) {
+    // Get the file path from the string token
+    char* base_path = stmt->import.path_token->literal.string;
+    
+    // Create the full path with .ms extension if not present
+    char* file_path;
+    if (strstr(base_path, ".ms") == NULL) {
+        file_path = malloc(strlen(base_path) + 4); // +3 for ".ms" +1 for null terminator
+        strcpy(file_path, base_path);
+        strcat(file_path, ".ms");
+    } else {
+        file_path = malloc(strlen(base_path) + 1);
+        strcpy(file_path, base_path);
+    }
+    
+    // Check if file exists
+    if (access(file_path, F_OK) != 0) {
+        runtime_error(interpreter, "Module file '%s' not found", file_path);
+    }
+    
+    // Read the file content
+    FILE* file = fopen(file_path, "r");
+    if (!file) {
+        runtime_error(interpreter, "Failed to open module file '%s'", file_path);
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    rewind(file);
+    
+    // Allocate buffer and read file
+    char* content = malloc(file_size + 1);
+    fread(content, 1, file_size, file);
+    content[file_size] = '\0';
+    fclose(file);
+    
+    // Create lexer and parser for the imported file
+    Lexer* lexer = create_lexer(content, file_path);
+    scan_tokens(lexer);
+    
+    Parser* parser = create_parser(lexer->tokens, lexer->token_count, file_path);
+    Stmt** statements = parse(parser);
+    
+    // Execute the imported file in the current environment
+    // This will add all variables and functions to the current scope
+    for (int i = 0; statements[i] != NULL; i++) {
+        execute_stmt(interpreter, statements[i]);
+        if (interpreter->has_returned) {
+            break; // Handle early returns in imported modules
+        }
+    }
+    
+    // Clean up
+    free(content);
+    free(file_path);
+    // Note: We should also free lexer, parser, and statements, but for simplicity we'll skip that
+}
+
 void execute_return_stmt(Interpreter* interpreter, Stmt* stmt) {
     if (stmt->return_stmt.value != NULL) {
         interpreter->return_value = evaluate_expr(interpreter, stmt->return_stmt.value);
@@ -1890,12 +2363,14 @@ void execute_stmt(Interpreter* interpreter, Stmt* stmt) {
         case STMT_FUNCTION:
             execute_function_stmt(interpreter, stmt);
             break;
+        case STMT_IMPORT:
+            execute_import_stmt(interpreter, stmt);
+            break;
         case STMT_RETURN:
             execute_return_stmt(interpreter, stmt);
             break;
         default:
-            printf("Runtime Error: Unknown statement type.\n");
-            exit(1);
+            runtime_error(interpreter, "Unknown statement type");
     }
 }
 
@@ -1908,6 +2383,7 @@ Interpreter* create_interpreter(char* filename) {
     interpreter->builtin_count = 0;
     interpreter->has_returned = false;
     interpreter->return_value.type = VALUE_NIL;
+    interpreter->current_line = 0;
     return interpreter;
 }
 
