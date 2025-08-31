@@ -31,4 +31,4 @@ zero_mult = zero * 10;
 print("Zero operations:", zero_add, zero_mult);
 
 print("Test 2: PASSED");
-print("");
+
