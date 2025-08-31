@@ -420,10 +420,28 @@ All tests are located in the `tests/` directory and follow a standardized naming
 
 ### Test Runners
 
-Four specialized test runners are provided in the root directory:
+Multiple specialized test runners are provided:
+
+#### Unix Shell Script (Linux/macOS) - `run_tests.sh`
+**Purpose**: Cross-platform test runner with support for both C and Python implementations
+```bash
+./run_tests.sh                    # Run with C implementation (default)
+./run_tests.sh --python           # Run with Python implementation  
+./run_tests.sh --verbose          # Show detailed output
+./run_tests.sh --python --verbose # Python implementation with verbose output
+./run_tests.sh --help             # Show usage information
+```
+**Features**:
+- Supports both C and Python implementations
+- Timeout protection (30s per test)
+- Detailed error reporting with exit codes
+- Verbose mode for debugging
+- Cross-platform compatibility
+
+#### Windows Batch Scripts
 
 #### 1. `run_tests.bat` - Comprehensive Testing
-**Purpose**: Runs all 20 tests with detailed reporting and descriptions
+**Purpose**: Runs all 21 tests with detailed reporting and descriptions
 ```bash
 .\run_tests.bat
 ```
@@ -485,17 +503,17 @@ Overall result: ALL TESTS PASSED
 
 #### Quick Start
 ```bash
-# Run all tests (recommended)
-.\run_tests.bat
+# Unix/Linux/macOS
+./run_tests.sh                    # Run all tests with C implementation
+./run_tests.sh --python           # Run all tests with Python implementation
 
-# Run core features only (fast)
-.\quick_test.bat
+# Windows  
+.\run_tests.bat                   # Run all tests (recommended)
 
-# Run advanced features only  
-.\test_advanced.bat
-
-# Debug a specific test
-.\test_verbose.bat
+# Cross-platform alternatives
+.\quick_test.bat                  # Run core features only (fast)
+.\test_advanced.bat               # Run advanced features only  
+.\test_verbose.bat                # Debug a specific test
 ```
 
 #### Manual Testing

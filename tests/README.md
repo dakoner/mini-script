@@ -38,7 +38,16 @@ The test suite is organized into focused test files, each testing specific langu
 
 ## Running the Tests
 
-### Windows Batch Script (Recommended)
+### Unix Shell Script (Recommended for Linux/macOS)
+```bash
+./run_tests.sh                    # Run with C implementation
+./run_tests.sh --python           # Run with Python implementation
+./run_tests.sh --verbose          # Show detailed output
+./run_tests.sh --python --verbose # Python implementation with verbose output
+./run_tests.sh --help             # Show usage information
+```
+
+### Windows Batch Script (Recommended for Windows)
 ```batch
 cd tests
 run_tests.bat
