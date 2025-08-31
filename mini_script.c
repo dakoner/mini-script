@@ -2905,7 +2905,26 @@ int main(int argc, char* argv[]) {
     
     printf("Mini Script Language Interpreter\n");
     printf("=================================\n");
-    printf("Executing: %s\n", argv[1]);
+
+    // Create a display path that's relative to the tests directory
+    char display_path_buf[1024];
+    strncpy(display_path_buf, argv[1], sizeof(display_path_buf) - 1);
+    display_path_buf[sizeof(display_path_buf) - 1] = '\0';
+
+    // Normalize path separators for consistency
+    for (char* p = display_path_buf; *p; ++p) {
+        if (*p == '\\') {
+            *p = '/';
+        }
+    }
+
+    char* display_path = display_path_buf;
+    char* tests_marker = strstr(display_path, "tests/");
+    if (tests_marker != NULL) {
+        display_path = tests_marker;
+    }
+
+    printf("Executing: %s\n", display_path);
     printf("---------------------------------\n\n");
     
     // Execute the script

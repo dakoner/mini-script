@@ -309,26 +309,12 @@ final_complex = ((final_sum + final_product) * 2) - (final_sum / 2);
 final_string_length = len(stress_string_001) + len(stress_string_002) + len(stress_string_003);
 final_list_length = len(stress_list_001) + len(stress_list_002) + len(stress_list_003) + len(stress_list_004);
 
-// Performance summary
-print("Performance summary:");
-print("Variables created: 1000+");
-print("Operations performed: 1000+");
-print("Control structures executed: 100+");
-print("Function calls made: 100+");
-print("String concatenations: 100+");
-print("List operations: 100+");
-print("Boolean evaluations: 100+");
-
-print("Final calculations:");
-print("Sum:", final_sum);
-print("Product:", final_product);
-print("Complex:", final_complex);
-print("String lengths total:", final_string_length);
-print("List lengths total:", final_list_length);
-
-print("Memory stress test completed");
-print("Parser stress test completed");
-print("Execution stress test completed");
+// Assertions to verify correctness
+assert final_sum == 55, "Final sum check";
+assert final_product == 120, "Final product check";
+assert final_complex == 322.5, "Final complex calculation check";
+assert final_string_length == 118, "Final string length check";
+assert final_list_length == 45, "Final list length check";
 
 print("Test 15: PASSED");
 print("Large file processing successful!");

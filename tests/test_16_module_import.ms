@@ -1,40 +1,34 @@
-// Test 16: Module Import System - Combined comprehensive test
+// Test 16: Module Import System
 print("=== Test 16: Module Import System ===");
 
-// Test 1: Basic import functionality
+// Test 1: Basic import functionality (ensures no errors)
 print("Test 1: Basic import");
 import "scripts/tiny_module";
+assert tiny_var == 1, "Basic import variable check";
 
 // Test 2: Variable import
 print("Test 2: Variable import");
 import "scripts/vars_module";
-print("Imported var1:", var1);
-print("Imported var2:", var2);
-print("Imported var3:", var3);
+assert var1 == 10, "Imported var1 check";
+assert var2 == "hello", "Imported var2 check";
+assert var3 == true, "Imported var3 check";
 
 // Test 3: Advanced math utilities with functions and variables
 print("Test 3: Math utilities import");
 import "scripts/math_utils";
-add_result = add(5, 3);
-mult_result = multiply(4, 6);
-square_result = square(7);
-print("5 + 3 =", add_result);
-print("4 * 6 =", mult_result);
-print("7^2 =", square_result);
-print("Module name:", module_name);
-print("Module version:", module_version);
+assert add(5, 3) == 8, "Imported add function check";
+assert multiply(4, 6) == 24, "Imported multiply function check";
+assert square(7) == 49, "Imported square function check";
+assert module_name == "Math Utilities", "Imported module_name check";
+assert module_version == "1.0", "Imported module_version check";
 
 // Test 4: Multiple imports and function combinations
 print("Test 4: Function combinations");
-combined_result = add(mult_result, square_result);
-print("Combined calculation:", mult_result, "+", square_result, "=", combined_result);
+var mult_result = multiply(4, 6);
+var square_result = square(7);
+var combined_result = add(mult_result, square_result);
+assert combined_result == 73, "Combined calculation with imported functions check";
 
-// Test 5: Module not found (commented out to avoid errors in automated testing)
-print("Test 5: Module error handling");
-print("Error handling for missing modules is implemented");
-// import "nonexistent_module.ms";  // Would show proper error message
+// Test 5: Module not found is handled by the interpreter, can't be asserted here.
 
-print("Module import tests completed successfully!");
-print("All import types tested: basic modules, variable modules, function modules");
 print("Test 16: PASSED");
-print("===");

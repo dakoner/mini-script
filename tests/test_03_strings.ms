@@ -1,37 +1,30 @@
 // Test 3: String Operations
 print("=== Test 3: String Operations ===");
 
-str1 = "Hello";
-str2 = "World";
-space = " ";
+var str1 = "Hello";
+var str2 = "World";
+var space = " ";
 
 // String concatenation
-concatenated = str1 + space + str2;
-print("Concatenation:", concatenated);
+assert str1 + space + str2 == "Hello World", "String concatenation check";
 
 // String with numbers
-name = "Alice";
-age = 25;
-mixed = name + " is " + age + " years old";
-print("Mixed string:", mixed);
+var name = "Alice";
+var age = 25;
+assert name + " is " + age + " years old" == "Alice is 25 years old", "Mixed type concatenation check";
 
 // Empty string concatenation
-empty = "";
-result = empty + "Not empty";
-print("Empty concat:", result);
+var empty = "";
+assert empty + "Not empty" == "Not empty", "Empty string concatenation check";
 
 // Multiple concatenations
-multi = "A" + "B" + "C" + "D";
-print("Multiple concat:", multi);
+assert "A" + "B" + "C" + "D" == "ABCD", "Multiple concatenation check";
 
 // String length function
-text = "Testing";
-length = len(text);
-print("Length of '" + text + "':", length);
+var text = "Testing";
+assert len(text) == 7, "Length of 'Testing' check";
 
 // Length of empty string
-empty_len = len("");
-print("Length of empty string:", empty_len);
+assert len("") == 0, "Length of empty string check";
 
 print("Test 3: PASSED");
-print("");

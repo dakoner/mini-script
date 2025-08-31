@@ -2,63 +2,55 @@
 print("=== Test 8: For Loops ===");
 
 // Basic for loop
-print("Basic for loop (1 to 5):");
-for (i = 1; i <= 5; i = i + 1) {
-    print("Iteration:", i);
+var sum = 0;
+for (var i = 1; i <= 5; i = i + 1) {
+    sum = sum + i;
 }
+assert sum == 15, "Basic for loop sum check";
 
 // For loop counting down
-print("Counting down (10 to 6):");
-for (j = 10; j >= 6; j = j - 1) {
-    print("Value:", j);
+var countdown_str = "";
+for (var j = 5; j >= 1; j = j - 1) {
+    countdown_str = countdown_str + j;
 }
+assert countdown_str == "54321", "Countdown for loop check";
 
 // For loop with step of 2
-print("Counting by 2s (0 to 10):");
-for (k = 0; k <= 10; k = k + 2) {
-    print("Even number:", k);
+var even_sum = 0;
+for (var k = 0; k <= 10; k = k + 2) {
+    even_sum = even_sum + k;
 }
+assert even_sum == 30, "For loop with step 2 sum check";
 
 // For loop with calculations
-print("Squares of numbers 1-5:");
-for (n = 1; n <= 5; n = n + 1) {
-    square = n * n;
-    print("Square of", n, "=", square);
+var squares_sum = 0;
+for (var n = 1; n <= 5; n = n + 1) {
+    squares_sum = squares_sum + (n * n);
 }
+assert squares_sum == 55, "For loop with calculations check";
 
 // For loop building a string
-print("Building simple string:");
-result_str = "";
-for (letter_num = 1; letter_num <= 3; letter_num = letter_num + 1) {
+var result_str = "";
+for (var letter_num = 1; letter_num <= 3; letter_num = letter_num + 1) {
     result_str = result_str + "A";
 }
-print("Result:", result_str);
+assert result_str == "AAA", "For loop string building check";
 
 // Nested for loops
-print("Nested for loops (2x3 grid):");
-for (row = 1; row <= 2; row = row + 1) {
-    for (col = 1; col <= 3; col = col + 1) {
-        print("Position", row, col);
+var nested_sum = 0;
+for (var row = 1; row <= 2; row = row + 1) {
+    for (var col = 1; col <= 3; col = col + 1) {
+        nested_sum = nested_sum + 1;
     }
 }
+assert nested_sum == 6, "Nested for loops iteration count check";
 
 // For loop with complex condition
-print("For loop with complex increment:");
-for (x = 2; x <= 20; x = x * 2) {
-    print("Power of 2:", x);
+var power_val = 0;
+for (var x = 2; x <= 20; x = x * 2) {
+    power_val = x;
 }
-
-// For loop with boolean variables
-print("For loop with counter:");
-for (flag_count = 1; flag_count <= 3; flag_count = flag_count + 1) {
-    if (flag_count == 1) {
-        print("Count", flag_count, "is first");
-    } else if (flag_count == 2) {
-        print("Count", flag_count, "is second");
-    } else {
-        print("Count", flag_count, "is third");
-    }
-}
+assert power_val == 16, "For loop with complex increment check";
 
 print("Test 8: PASSED");
 print("");

@@ -1,68 +1,82 @@
 // Test 6: Conditional Statements (if/else)
 print("=== Test 6: Conditional Statements ===");
 
+var result = "";
+
 // Simple if statement
-age = 18;
+var age = 18;
 if (age >= 18) {
-    print("You are an adult");
+    result = "adult";
 }
+assert result == "adult", "Simple if check";
 
 // If-else statement
-score = 85;
+var score = 85;
 if (score >= 90) {
-    print("Grade: A");
+    result = "Grade A";
 } else {
-    print("Grade: B or below");
+    result = "Grade B or below";
 }
+assert result == "Grade B or below", "If-else check";
 
 // If-else if-else chain
-temperature = 75;
+var temperature = 75;
+var weather = "";
 if (temperature > 90) {
-    print("It's very hot");
+    weather = "very hot";
 } else if (temperature > 70) {
-    print("It's warm");
+    weather = "warm";
 } else if (temperature > 50) {
-    print("It's cool");
+    weather = "cool";
 } else {
-    print("It's cold");
+    weather = "cold";
 }
+assert weather == "warm", "If-else if-else chain check";
 
 // Nested if statements
-x = 10;
-y = 5;
+var x = 10;
+var y = 5;
+var quadrant = "";
 if (x > 0) {
     if (y > 0) {
-        print("Both x and y are positive");
+        quadrant = "Both x and y are positive";
     } else {
-        print("x is positive, y is not");
+        quadrant = "x is positive, y is not";
     }
 } else {
-    print("x is not positive");
+    quadrant = "x is not positive";
 }
+assert quadrant == "Both x and y are positive", "Nested if check";
 
 // Complex conditions
-username = "admin";
-password = "secret";
+var username = "admin";
+var password = "secret";
+var login_status = "";
 if (username == "admin" && password == "secret") {
-    print("Login successful");
+    login_status = "Login successful";
 } else {
-    print("Login failed");
+    login_status = "Login failed";
 }
+assert login_status == "Login successful", "Complex condition check";
 
 // Boolean variable in condition
-is_weekend = true;
+var is_weekend = true;
+var activity = "";
 if (is_weekend) {
-    print("Enjoy your weekend!");
+    activity = "Enjoy your weekend!";
 } else {
-    print("Back to work!");
+    activity = "Back to work!";
 }
+assert activity == "Enjoy your weekend!", "Boolean condition check";
 
 // Comparison in condition
-num1 = 15;
-num2 = 10;
+var num1 = 15;
+var num2 = 10;
+var comparison_result = "";
 if (num1 != num2) {
-    print("Numbers are different");
+    comparison_result = "Numbers are different";
 }
+assert comparison_result == "Numbers are different", "Comparison in condition check";
 
 print("Test 6: PASSED");
 print("");

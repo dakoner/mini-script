@@ -1,25 +1,29 @@
 // Test 9: Basic Lists
 print("=== Test 9: Basic Lists ===");
 
-list1 = [1, 2, 3];
-print("Number list:", list1);
+var list1 = [1, 2, 3];
+assert list1[0] == 1, "List index 0 check";
+assert list1[1] == 2, "List index 1 check";
+assert list1[2] == 3, "List index 2 check";
 
-list2 = ["a", "b", "c"];
-print("String list:", list2);
+var list2 = ["a", "b", "c"];
+assert list2[0] == "a", "String list index 0 check";
+assert list2[1] == "b", "String list index 1 check";
+assert list2[2] == "c", "String list index 2 check";
 
-list3 = [true, false];
-print("Boolean list:", list3);
+var list3 = [true, false];
+assert list3[0] == true, "Boolean list index 0 check";
+assert list3[1] == false, "Boolean list index 1 check";
 
-mixed = [1, "hello", true];
-print("Mixed list:", mixed);
+var mixed = [1, "hello", true];
+assert mixed[0] == 1, "Mixed list index 0 check";
+assert mixed[1] == "hello", "Mixed list index 1 check";
+assert mixed[2] == true, "Mixed list index 2 check";
 
-empty = [];
-print("Empty list:", empty);
+var empty = [];
+assert len(empty) == 0, "Empty list length check";
 
-print("List lengths:");
-print("List1 length:", len(list1));
-print("List2 length:", len(list2));
-print("Empty length:", len(empty));
+assert len(list1) == 3, "List1 length check";
+assert len(list2) == 3, "List2 length check";
 
 print("Test 9: PASSED");
-print("");

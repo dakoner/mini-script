@@ -2,66 +2,67 @@
 print("=== Test 7: While Loops ===");
 
 // Basic while loop
-print("Counting up from 1 to 5:");
-i = 1;
+var i = 1;
+var sum = 0;
 while (i <= 5) {
-    print("Count:", i);
+    sum = sum + i;
     i = i + 1;
 }
+assert sum == 15, "Basic while loop sum check";
+assert i == 6, "Basic while loop counter check";
 
 // Countdown while loop
-print("Countdown from 5 to 1:");
-j = 5;
+var j = 5;
+var countdown_str = "";
 while (j >= 1) {
-    print("T-minus", j);
+    countdown_str = countdown_str + j;
     j = j - 1;
 }
-print("Liftoff!");
+assert countdown_str == "54321", "Countdown while loop check";
+assert j == 0, "Countdown counter check";
 
 // While loop with condition
-print("Finding first power of 2 greater than 100:");
-power = 1;
-exponent = 0;
+var power = 1;
+var exponent = 0;
 while (power <= 100) {
     power = power * 2;
     exponent = exponent + 1;
 }
-print("2^" + exponent + " =", power);
+assert power == 128, "Power of 2 check";
+assert exponent == 7, "Exponent check";
 
 // While loop with string concatenation
-print("Building a string:");
-str = "";
-counter = 1;
+var str = "";
+var counter = 1;
 while (counter <= 3) {
     str = str + "Step" + counter + " ";
     counter = counter + 1;
 }
-print("Result:", str);
+assert str == "Step1 Step2 Step3 ", "String building loop check";
 
 // While loop with boolean condition
-print("While loop with boolean:");
-continue_loop = true;
-loop_count = 0;
+var continue_loop = true;
+var loop_count = 0;
 while (continue_loop) {
     loop_count = loop_count + 1;
-    print("Loop iteration:", loop_count);
     if (loop_count >= 3) {
         continue_loop = false;
     }
 }
+assert loop_count == 3, "Boolean condition loop check";
 
 // Nested while loops
-print("Nested while loops (multiplication table):");
-outer = 1;
+var outer = 1;
+var total_sum = 0;
 while (outer <= 3) {
-    inner = 1;
+    var inner = 1;
     while (inner <= 3) {
-        result = outer * inner;
-        print(outer + " x " + inner + " =", result);
+        total_sum = total_sum + (outer * inner);
         inner = inner + 1;
     }
     outer = outer + 1;
 }
+assert total_sum == 36, "Nested while loops sum check";
 
 print("Test 7: PASSED");
 print("");

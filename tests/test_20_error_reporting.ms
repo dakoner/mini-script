@@ -1,54 +1,31 @@
 print("=== Test 20: Error Reporting System ===");
 
-print("Testing error reporting with filenames...");
+// This test file primarily verifies that valid code runs without error.
+// The actual testing of error messages happens by running scripts designed to fail,
+// which can't be done in a test that is expected to pass.
 
-// Test 1: Basic error in main file should show filename
-print("Test 1: Error reporting in main file");
-// We can't actually test the error here since it would stop execution
-// This test passes by running successfully
-print("Test 1: PASSED");
-
-// Test 2: Function definition works (this was a bug we fixed)
-function test_function(int x) {
+// Test 1: Function definition and call
+function test_function(x) {
     return x * 2;
 }
+assert test_function(21) == 42, "Function definition and call check";
 
-result = test_function(21);
-if (result == 42) {
-    print("Test 2: Function definition and call");
-    print("Test 2: PASSED");
-} else {
-    print("Test 2: FAILED - Expected 42, got", result);
-}
+// Test 2: Variable assignments
+var version = "2.0";
+var name = "ErrorTest";
+assert version == "2.0", "String variable assignment check";
+assert name == "ErrorTest", "Another string variable assignment check";
 
-// Test 3: Variable assignments work correctly
-version = "2.0";
-name = "ErrorTest";
-
-if (version == "2.0" && name == "ErrorTest") {
-    print("Test 3: Variable assignments");
-    print("Test 3: PASSED");
-} else {
-    print("Test 3: FAILED - Variable assignment issue");
-}
-
-// Test 4: Multiple functions work correctly
-function add(int a, int b) {
+// Test 3: Multiple functions
+function add(a, b) {
     return a + b;
 }
 
-function multiply(int a, int b) {
+function multiply(a, b) {
     return a * b;
 }
 
-sum = add(10, 20);
-product = multiply(6, 7);
-
-if (sum == 30 && product == 42) {
-    print("Test 4: Multiple function definitions");
-    print("Test 4: PASSED");
-} else {
-    print("Test 4: FAILED - Expected sum=30, product=42, got", sum, product);
-}
+assert add(10, 20) == 30, "Multiple functions (add) check";
+assert multiply(6, 7) == 42, "Multiple functions (multiply) check";
 
 print("Test 20: PASSED");

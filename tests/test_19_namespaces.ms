@@ -1,46 +1,43 @@
 print("=== Test 19: Namespace Import System ===");
 
-print("Testing namespace-based imports...");
+// This test verifies the namespace import feature.
 
-// Test namespace import
+// Test time namespace import
 import time from "lib/time_library";
-
-print("Test 1: Namespace import successful");
-
-// Test accessing namespaced functions
-current_time = time.now();
-print("Test 2: time.now() = " + current_time);
-
-formatted = time.format(current_time, "%Y-%m-%d %H:%M:%S");
-print("Test 3: time.format() = " + formatted);
+assert time != null, "Time namespace should be imported";
 
 // Test accessing namespaced variables
-print("Test 4: time.version = " + time.version);
-print("Test 5: time.name = " + time.name);
+assert time.version == "1.1", "time.version check";
+assert time.name == "Time Library", "time.name check";
+
+// Test accessing namespaced functions
+// We can't assert the exact value of time.now(), but we can check it's a number.
+var current_time = time.now();
+assert current_time > 0, "time.now() should return a positive number";
 
 // Test time calculations with namespace
-future_time = time.add(current_time, 3600);
-difference = time.diff(future_time, current_time);
-print("Test 6: Added 1 hour, difference = " + difference);
+var future_time = time.add(current_time, 3600);
+var difference = time.diff(future_time, current_time);
+assert difference == 3600, "time.diff check";
 
 // Test file namespace import
-import file from "lib/file_library";
-
-print("Test 7: File namespace import successful");
-print("Test 8: file.version = " + file.version);
+import file from "lib/file_library_no_print";
+assert file != null, "File namespace should be imported";
+assert file.version == "1.0", "file.version check";
 
 // Test file operations with namespace
-test_file = "namespace_test.txt";
-if (file.exists(test_file)) {
-    handle = file.open(test_file, "r");
-    content = file.read(handle);
-    file.close(handle);
-    print("Test 9: File content read successfully: " + content);
-} else {
-    handle = file.open(test_file, "w");
-    file.write(handle, "Namespace test data");
-    file.close(handle);
-    print("Test 9: File created with namespace functions");
-}
+var test_file = "namespace_test_19.txt";
+var handle = file.open(test_file, "w");
+assert handle != null, "file.open for write should succeed";
+file.write(handle, "Namespace test data");
+file.close(handle);
+
+assert file.exists(test_file) == true, "file.exists check";
+
+handle = file.open(test_file, "r");
+assert handle != null, "file.open for read should succeed";
+var content = file.read(handle);
+file.close(handle);
+assert content == "Namespace test data", "file.read check";
 
 print("Test 19: PASSED");

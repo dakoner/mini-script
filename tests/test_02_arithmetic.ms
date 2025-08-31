@@ -1,34 +1,25 @@
 // Test 2: Arithmetic Operators
 print("=== Test 2: Arithmetic Operators ===");
 
-a = 10;
-b = 3;
+var a = 10;
+var b = 3;
 
 // Basic arithmetic
-addition = a + b;
-subtraction = a - b;
-multiplication = a * b;
-division = a / b;
-
-print("a =", a, ", b =", b);
-print("Addition: a + b =", addition);
-print("Subtraction: a - b =", subtraction);
-print("Multiplication: a * b =", multiplication);
-print("Division: a / b =", division);
+assert a + b == 13, "Addition check";
+assert a - b == 7, "Subtraction check";
+assert a * b == 30, "Multiplication check";
+assert a / b == 10/3, "Division check";
 
 // Order of operations
-complex_expr = (a + b) * 2 - b / 2;
-print("Complex: (a + b) * 2 - b / 2 =", complex_expr);
+assert (a + b) * 2 - b / 2 == 24.5, "Order of operations check";
 
 // Negative numbers
-negative_result = -a + b;
-print("Negative: -a + b =", negative_result);
+assert -a + b == -7, "Negative number arithmetic check";
 
 // Zero operations
-zero = 0;
-zero_add = zero + 5;
-zero_mult = zero * 10;
-print("Zero operations:", zero_add, zero_mult);
+var zero = 0;
+assert zero + 5 == 5, "Zero addition check";
+assert zero * 10 == 0, "Zero multiplication check";
 
 print("Test 2: PASSED");
 

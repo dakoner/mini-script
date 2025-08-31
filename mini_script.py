@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+from datetime import datetime
 from enum import Enum, auto
 
 
@@ -31,6 +32,7 @@ class TokenType(Enum):
     INT_TYPE, FLOAT_TYPE, CHAR_TYPE, STRING_TYPE, LIST, MAP = (
         auto(), auto(), auto(), auto(), auto(), auto())
     LOADLIB, GETPROC, FREELIB, CALLEXT = auto(), auto(), auto(), auto()
+    ASSERT, VAR, NIL = auto(), auto(), auto()
 
     EOF = auto()
 
@@ -55,6 +57,9 @@ KEYWORDS = {
     "getproc":  TokenType.GETPROC,
     "freelib":  TokenType.FREELIB,
     "callext":  TokenType.CALLEXT,
+    "assert":   TokenType.ASSERT,
+    "var":      TokenType.VAR,
+    "nil":      TokenType.NIL,
 }
 
 
@@ -185,7 +190,7 @@ class Lexer:
             self.add_token(TokenType.SEMICOLON)
         elif c == '*':
             self.add_token(TokenType.MULTIPLY)
-        elif c == '!':
+        elif c == '!:
             self.add_token(
                 TokenType.NOT_EQUAL if self.match('=') else TokenType.NOT)
         elif c == '=':
@@ -249,6 +254,8 @@ class Stmt:
         def visit_return_stmt(self, stmt): raise NotImplementedError
         def visit_while_stmt(self, stmt): raise NotImplementedError
         def visit_import_stmt(self, stmt): raise NotImplementedError
+        def visit_assert_stmt(self, stmt): raise NotImplementedError
+        def visit_var_stmt(self, stmt): raise NotImplementedError
 
     def accept(self, visitor):
         method_name = f'visit_{self.__class__.__name__.lower()}_stmt'
@@ -384,6 +391,19 @@ class Import(Stmt):
         self.namespace = namespace
 
 
+class Assert(Stmt):
+    def __init__(self, keyword, condition, message):
+        self.keyword = keyword
+        self.condition = condition
+        self.message = message
+
+
+class Var(Stmt):
+    def __init__(self, name, initializer):
+        self.name = name
+        self.initializer = initializer
+
+
 # =============================================================================
 # 3. PARSER
 # =============================================================================
@@ -406,63 +426,128 @@ class Parser:
                 statements.append(stmt)
         return statements
 
+    def is_at_end(self):
+        return self.peek().type == TokenType.EOF
+
+    def peek(self):
+        return self.tokens[self.current]
+
+    def peek_next(self):
+        if self.current + 1 >= len(self.tokens):
+            return self.tokens[len(self.tokens) - 1]
+        return self.tokens[self.current + 1]
+
+    def previous(self):
+        return self.tokens[self.current - 1]
+
+    def advance(self):
+        if not self.is_at_end():
+            self.current += 1
+        return self.previous()
+
+    def check(self, type):
+        if self.is_at_end():
+            return False
+        return self.peek().type == type
+
+    def match(self, *types):
+        for t in types:
+            if self.check(t):
+                self.advance()
+                return True
+        return False
+
+    def consume(self, type, message):
+        if self.check(type):
+            return self.advance()
+        raise ParseError()
+
+    def synchronize(self):
+        self.advance()
+        while not self.is_at_end():
+            if self.previous().type == TokenType.SEMICOLON:
+                return
+            if self.peek().type in (TokenType.FUNCTION, TokenType.WHILE, TokenType.FOR,
+                                     TokenType.IF, TokenType.RETURN, TokenType.PRINT):
+                return
+            self.advance()
+
     def declaration(self):
         try:
             if self.match(TokenType.FUNCTION):
                 return self.function_declaration()
+            if self.match(TokenType.VAR):
+                return self.var_declaration()
             return self.statement()
         except ParseError:
             self.synchronize()
             return None
 
+    def var_declaration(self):
+        name = self.consume(TokenType.IDENTIFIER, "Expect variable name.")
+        initializer = None
+        if self.match(TokenType.ASSIGN):
+            initializer = self.expression()
+        self.consume(TokenType.SEMICOLON, "Expect ';' after variable declaration.")
+        return Var(name, initializer)
+
     def function_declaration(self):
         name = self.consume(TokenType.IDENTIFIER, "Expect function name.")
         self.consume(TokenType.LPAREN, "Expect '(' after function name.")
-        parameters = []
+
+        params = []
         if not self.check(TokenType.RPAREN):
             while True:
-                if len(parameters) >= 255:
-                    self.error(self.peek(),
-                               "Can't have more than 255 parameters.")
-                if self.check(TokenType.INT_TYPE, TokenType.FLOAT_TYPE,
-                              TokenType.STRING_TYPE, TokenType.CHAR_TYPE):
-                    self.advance()
-                parameters.append(self.consume(
-                    TokenType.IDENTIFIER, "Expect parameter name."))
+                if len(params) >= 255:
+                    self.error(self.peek(), "Can't have more than 255 parameters.")
+                params.append(self.consume(TokenType.IDENTIFIER, "Expect parameter name."))
                 if not self.match(TokenType.COMMA):
                     break
         self.consume(TokenType.RPAREN, "Expect ')' after parameters.")
+
         self.consume(TokenType.LBRACE, "Expect '{' before function body.")
         body = self.block()
-        return Function(name, parameters, body)
+        return Function(name, params, body)
 
     def statement(self):
-        if self.match(TokenType.IF):
-            return self.if_statement()
-        if self.match(TokenType.WHILE):
-            return self.while_statement()
-        if self.match(TokenType.FOR):
-            return self.for_statement()
-        if self.match(TokenType.RETURN):
-            return self.return_statement()
+        if self.match(TokenType.ASSERT):
+            return self.assert_statement()
         if self.match(TokenType.IMPORT):
             return self.import_statement()
         if self.match(TokenType.LBRACE):
             return Block(self.block())
+        if self.match(TokenType.RETURN):
+            return self.return_statement()
+        if self.match(TokenType.WHILE):
+            return self.while_statement()
+        if self.match(TokenType.FOR):
+            return self.for_statement()
+        if self.match(TokenType.IF):
+            return self.if_statement()
+
         return self.expression_statement()
+
+    def assert_statement(self):
+        keyword = self.previous()
+        condition = self.expression()
+        self.consume(TokenType.COMMA, "Expect ',' after assert condition.")
+        message = self.expression()
+        self.consume(TokenType.SEMICOLON, "Expect ';' after assert message.")
+        return Assert(keyword, condition, message)
 
     def import_statement(self):
         namespace = None
         if (self.check(TokenType.IDENTIFIER) and
-                self.peek_next().lexeme == 'from'):
-            namespace = self.consume(TokenType.IDENTIFIER,
-                                     "Expect namespace name.")
-            self.consume(TokenType.IDENTIFIER, "Expect 'from' keyword.")
-
-        path_token = self.consume(TokenType.STRING, "Expect module path in quotes.")
-        if self.match(TokenType.SEMICOLON):
-            pass
+            self.peek_next().type in (TokenType.COMMA, TokenType.SEMICOLON)):
+            namespace = self.consume(TokenType.IDENTIFIER, "Expect namespace for import.")
+        path_token = self.consume(TokenType.STRING, "Expect string path for import.")
+        self.consume(TokenType.SEMICOLON, "Expect ';' after import statement.")
         return Import(path_token, namespace)
+
+    def expression_statement(self):
+        expr = self.expression()
+        self.consume(TokenType.SEMICOLON, "Expect ';' after expression.")
+        return ExpressionStmt(expr)
 
     def return_statement(self):
         keyword = self.previous()
@@ -472,18 +557,31 @@ class Parser:
         self.consume(TokenType.SEMICOLON, "Expect ';' after return value.")
         return Return(keyword, value)
 
+    def while_statement(self):
+        self.consume(TokenType.LPAREN, "Expect '(' after 'while'.")
+        condition = self.expression()
+        self.consume(TokenType.RPAREN, "Expect ')' after condition.")
+        body = self.statement()
+        return While(condition, body)
+
     def for_statement(self):
         self.consume(TokenType.LPAREN, "Expect '(' after 'for'.")
 
+        # For loop variable
         initializer = None
-        if not self.match(TokenType.SEMICOLON):
+        if self.match(TokenType.VAR):
+            initializer = self.var_declaration()
+        elif not self.check(TokenType.SEMICOLON):
             initializer = self.expression_statement()
+        self.consume(TokenType.SEMICOLON, "Expect ';' after initializer.")
 
+        # For loop condition
         condition = None
         if not self.check(TokenType.SEMICOLON):
             condition = self.expression()
-        self.consume(TokenType.SEMICOLON, "Expect ';' after loop condition.")
+        self.consume(TokenType.SEMICOLON, "Expect ';' after for loop condition.")
 
+        # For loop increment
         increment = None
         if not self.check(TokenType.RPAREN):
             increment = self.expression()
@@ -504,50 +602,43 @@ class Parser:
 
         return body
 
-    def while_statement(self):
-        self.consume(TokenType.LPAREN, "Expect '(' after 'while'.")
-        condition = self.expression()
-        self.consume(TokenType.RPAREN, "Expect ')' after condition.")
-        body = self.statement()
-        return While(condition, body)
-
     def if_statement(self):
         self.consume(TokenType.LPAREN, "Expect '(' after 'if'.")
         condition = self.expression()
         self.consume(TokenType.RPAREN, "Expect ')' after if condition.")
+
         then_branch = self.statement()
         else_branch = None
         if self.match(TokenType.ELSE):
             else_branch = self.statement()
+
         return If(condition, then_branch, else_branch)
 
     def block(self):
         statements = []
         while not self.check(TokenType.RBRACE) and not self.is_at_end():
-            statements.append(self.declaration())
+            stmt = self.declaration()
+            if stmt is not None:
+                statements.append(stmt)
         self.consume(TokenType.RBRACE, "Expect '}' after block.")
         return statements
-
-    def expression_statement(self):
-        expr = self.expression()
-        if self.match(TokenType.SEMICOLON):
-            pass
-        return ExpressionStmt(expr)
 
     def expression(self):
         return self.assignment()
 
     def assignment(self):
         expr = self.logical_or()
+
         if self.match(TokenType.ASSIGN):
             equals = self.previous()
             value = self.assignment()
+
             if isinstance(expr, Variable):
                 name = expr.name
                 return Assign(name, value)
-            elif isinstance(expr, IndexGet):
-                return IndexSet(expr.object, expr.bracket, expr.index, value)
+
             self.error(equals, "Invalid assignment target.")
+
         return expr
 
     def logical_or(self):
@@ -577,7 +668,7 @@ class Parser:
     def comparison(self):
         expr = self.term()
         while self.match(TokenType.GREATER, TokenType.GREATER_EQUAL,
-                         TokenType.LESS, TokenType.LESS_EQUAL):
+                        TokenType.LESS, TokenType.LESS_EQUAL):
             operator = self.previous()
             right = self.term()
             expr = Binary(expr, operator, right)
@@ -585,7 +676,7 @@ class Parser:
 
     def term(self):
         expr = self.factor()
-        while self.match(TokenType.MINUS, TokenType.PLUS):
+        while self.match(TokenType.PLUS, TokenType.MINUS):
             operator = self.previous()
             right = self.factor()
             expr = Binary(expr, operator, right)
@@ -593,7 +684,7 @@ class Parser:
 
     def factor(self):
         expr = self.unary()
-        while self.match(TokenType.DIVIDE, TokenType.MULTIPLY):
+        while self.match(TokenType.MULTIPLY, TokenType.DIVIDE):
             operator = self.previous()
             right = self.unary()
             expr = Binary(expr, operator, right)
@@ -604,116 +695,66 @@ class Parser:
             operator = self.previous()
             right = self.unary()
             return Unary(operator, right)
+
         return self.call()
 
     def call(self):
         expr = self.primary()
         while True:
             if self.match(TokenType.LPAREN):
-                expr = self.finish_call(expr)
-            elif self.match(TokenType.LBRACKET):
-                index = self.expression()
-                bracket = self.consume(TokenType.RBRACKET, "Expect ']' after index.")
-                expr = IndexGet(expr, bracket, index)
+                arguments = []
+                if not self.check(TokenType.RPAREN):
+                    while True:
+                        if len(arguments) >= 255:
+                            self.error(self.peek(), "Can't have more than 255 arguments.")
+                        arguments.append(self.expression())
+                        if not self.match(TokenType.COMMA):
+                            break
+                paren = self.consume(TokenType.RPAREN, "Expect ')' after arguments.")
+                expr = Call(expr, paren, arguments)
             else:
                 break
         return expr
 
-    def finish_call(self, callee):
-        arguments = []
-        if not self.check(TokenType.RPAREN):
-            while True:
-                if len(arguments) >= 255:
-                    self.error(self.peek(),
-                               "Can't have more than 255 arguments.")
-                arguments.append(self.expression())
-                if not self.match(TokenType.COMMA):
-                    break
-        paren = self.consume(TokenType.RPAREN, "Expect ')' after arguments.")
-        return Call(callee, paren, arguments)
-
     def primary(self):
-        if self.match(TokenType.FALSE):
-            return Literal(False)
-        if self.match(TokenType.TRUE):
-            return Literal(True)
-        if self.match(TokenType.NUMBER, TokenType.STRING, TokenType.CHAR):
+        if self.match(TokenType.NUMBER, TokenType.FALSE, TokenType.TRUE, TokenType.NIL):
             return Literal(self.previous().literal)
-        if self.match(TokenType.LBRACKET):
-            return self.list_literal()
-        if self.match(TokenType.IDENTIFIER):
-            if self.match(TokenType.DOT):
-                namespace = self.previous()
-                member = self.consume(TokenType.IDENTIFIER,
-                                      "Expect property name after '.'.")
-                full_name = f"{namespace.lexeme}.{member.lexeme}"
-                token = Token(
-                    TokenType.IDENTIFIER, full_name, None, namespace.line)
-                return Variable(token)
-            return Variable(self.previous())
+
+        if self.match(TokenType.STRING):
+            return Literal(self.previous().literal)
+        if self.match(TokenType.TRUE): return Literal(True)
+        if self.match(TokenType.FALSE): return Literal(False)
+
         if self.match(TokenType.LPAREN):
             expr = self.expression()
             self.consume(TokenType.RPAREN, "Expect ')' after expression.")
             return Grouping(expr)
+
+        if self.match(TokenType.IDENTIFIER):
+            return Variable(self.previous())
+
+        if self.match(TokenType.LBRACKET):
+            elements = []
+            if not self.check(TokenType.RBRACKET):
+                while True:
+                    elements.append(self.expression())
+                    if not self.match(TokenType.COMMA):
+                        break
+            self.consume(TokenType.RBRACKET, "Expect ']' after list elements.")
+            return ListLiteral(elements)
+
         raise self.error(self.peek(), "Expect expression.")
-
-    def list_literal(self):
-        elements = []
-        if not self.check(TokenType.RBRACKET):
-            while True:
-                elements.append(self.expression())
-                if not self.match(TokenType.COMMA):
-                    break
-        self.consume(TokenType.RBRACKET, "Expect ']' after list elements.")
-        return ListLiteral(elements)
-
-    def match(self, *types):
-        for type in types:
-            if self.check(type):
-                self.advance()
-                return True
-        return False
 
     def consume(self, type, message):
         if self.check(type):
             return self.advance()
-        raise self.error(self.peek(), message)
-
-    def check(self, *types):
-        if self.is_at_end():
-            return False
-        for type in types:
-            if self.peek().type == type:
-                return True
-        return False
-
-    def peek_next(self):
-        if self.is_at_end() or self.current + 1 >= len(self.tokens):
-            return self.peek()
-        return self.tokens[self.current + 1]
-
-    def advance(self):
-        if not self.is_at_end():
-            self.current += 1
-        return self.previous()
-
-    def is_at_end(self):
-        return self.peek().type == TokenType.EOF
-
-    def peek(self):
-        return self.tokens[self.current]
-
-    def previous(self):
-        return self.tokens[self.current - 1]
+        raise ParseError()
 
     def error(self, token, message):
-        # The batch script expects errors on stdout
         if token.type == TokenType.EOF:
-            print(f"Parser Error at end in {self.filename}: {message}",
-                  file=sys.stdout)
+            print(f"Parse Error at end: {message}", file=sys.stdout)
         else:
-            print(f"Parser Error in {self.filename} at line {token.line} "
-                  f"[token: {token.lexeme}]: {message}", file=sys.stdout)
+            print(f"Parse Error at '{token.lexeme}': {message}", file=sys.stdout)
         return ParseError()
 
     def synchronize(self):
@@ -721,15 +762,110 @@ class Parser:
         while not self.is_at_end():
             if self.previous().type == TokenType.SEMICOLON:
                 return
-            if self.peek().type in [
-                    TokenType.FUNCTION, TokenType.WHILE, TokenType.FOR,
-                    TokenType.IF, TokenType.RETURN]:
+            if self.peek().type in (TokenType.FUNCTION, TokenType.WHILE, TokenType.FOR,
+                                     TokenType.IF, TokenType.RETURN, TokenType.PRINT):
                 return
             self.advance()
 
 
 # =============================================================================
-# 4. INTERPRETER
+# 4. BUILT-IN FUNCTIONS
+# =============================================================================
+
+class MiniScriptCallable:
+    def arity(self):
+        raise NotImplementedError()
+    def call(self, interpreter, arguments):
+        raise NotImplementedError()
+
+class BuiltinPrint(MiniScriptCallable):
+    def arity(self):
+        return -1  # Variadic
+    def call(self, interpreter, arguments):
+        print(*[interpreter.stringify(arg) for arg in arguments])
+        return None
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinLen(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        arg = arguments[0]
+        if isinstance(arg, str):
+            return len(arg)
+        if isinstance(arg, list):
+            return len(arg)
+        raise RuntimeError(None, "len() expects a string or a list.")
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinTimeNow(MiniScriptCallable):
+    def arity(self):
+        return 0
+    def call(self, interpreter, arguments):
+        return time.time()
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinTimeFormat(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        timestamp, fmt = arguments
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_format() expects a numeric timestamp as the first argument.")
+        if not isinstance(fmt, str):
+            raise RuntimeError(None, "time_format() expects a format string as the second argument.")
+        try:
+            return time.strftime(fmt, time.localtime(timestamp))
+        except ValueError:
+            # Handle potential errors with invalid format strings or timestamps
+            raise RuntimeError(None, "Invalid timestamp or format string for time_format().")
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinTimeParse(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        time_str, fmt = arguments
+        if not isinstance(time_str, str) or not isinstance(fmt, str):
+            raise RuntimeError(None, "time_parse() expects two string arguments.")
+        try:
+            dt = datetime.strptime(time_str, fmt)
+            return time.mktime(dt.timetuple())
+        except ValueError:
+            return -1 # Return -1 on parsing failure as per spec
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinTimeDiff(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        t1, t2 = arguments
+        if not isinstance(t1, (int, float)) or not isinstance(t2, (int, float)):
+            raise RuntimeError(None, "time_diff() expects two numeric timestamps.")
+        return t1 - t2
+    def __str__(self):
+        return "<native fn>"
+
+class BuiltinSleep(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        duration = arguments[0]
+        if not isinstance(duration, (int, float)):
+            raise RuntimeError(None, "sleep() expects a numeric duration in seconds.")
+        time.sleep(duration)
+        return None
+    def __str__(self):
+        return "<native fn>"
+
+
+# =============================================================================
+# 5. INTERPRETER
 # =============================================================================
 
 class RuntimeError(Exception):
@@ -776,12 +912,7 @@ class Environment:
         env.values[name] = value
 
 
-class MiniScriptCallable:
-    def arity(self):
-        raise NotImplementedError()
 
-    def call(self, interpreter, arguments):
-        raise NotImplementedError()
 
 
 class MiniScriptFunction(MiniScriptCallable):
@@ -813,89 +944,26 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         self.filename = filename
         self.globals = Environment()
         self.environment = self.globals
-        self._define_builtins()
+        self.locals = {}
+        self.modules_path = [os.getcwd()]  # Start with current directory
 
-    def _define_builtins(self):
-        # Print function
-        class Print(MiniScriptCallable):
-            def arity(self): return -1  # Variadic
-
-            def call(self, interpreter, arguments):
-                print(*[interpreter.stringify(arg) for arg in arguments])
-                return None
-
-            def __str__(self): return "<native fn print>"
-        self.globals.define("print", Print())
-
-        # Len function
-        class Len(MiniScriptCallable):
-            def arity(self): return 1
-
-            def call(self, interpreter, arguments):
-                arg = arguments[0]
-                if isinstance(arg, (str, list)):
-                    return len(arg)
-                interpreter.error(
-                    None, "len() only works on lists and strings.")
-                return None
-
-            def __str__(self): return "<native fn len>"
-        self.globals.define("len", Len())
-
-        # Time functions
-        class TimeNow(MiniScriptCallable):
-            def arity(self): return 0
-            def call(self, interpreter, arguments): return int(time.time())
-            def __str__(self): return "<native fn time_now>"
-        self.globals.define("time_now", TimeNow())
-
-        class TimeFormat(MiniScriptCallable):
-            def arity(self): return 2
-
-            def call(self, interpreter, arguments):
-                ts, fmt = arguments
-                if not isinstance(ts, (int, float)):
-                    interpreter.error(
-                        None, "time_format() expects timestamp as number.")
-                if not isinstance(fmt, str):
-                    interpreter.error(
-                        None, "time_format() expects format as string.")
-                return time.strftime(fmt, time.localtime(ts))
-
-            def __str__(self): return "<native fn time_format>"
-        self.globals.define("time_format", TimeFormat())
-
-        time_parts = {
-            "year": "tm_year", "month": "tm_mon", "day": "tm_mday",
-            "hour": "tm_hour", "minute": "tm_min", "second": "tm_sec",
-            "weekday": "tm_wday"
-        }
-        for ms_name, py_attr in time_parts.items():
-            self._define_time_part(f"time_{ms_name}", py_attr)
-
-    def _define_time_part(self, ms_name, py_attr):
-        class TimePart(MiniScriptCallable):
-            def arity(self): return 1
-
-            def call(self, interpreter, arguments):
-                ts = arguments[0]
-                if not isinstance(ts, (int, float)):
-                    interpreter.error(
-                        None, f"{ms_name}() expects timestamp as number.")
-                tm_struct = time.localtime(ts)
-                return getattr(tm_struct, py_attr)
-
-            def __str__(self): return f"<native fn {ms_name}>"
-        self.globals.define(ms_name, TimePart())
+        # Built-in functions
+        self.globals.define("print", BuiltinPrint())
+        self.globals.define("len", BuiltinLen())
+        self.globals.define("time_now", BuiltinTimeNow())
+        self.globals.define("time_format", BuiltinTimeFormat())
+        self.globals.define("time_parse", BuiltinTimeParse())
+        self.globals.define("time_diff", BuiltinTimeDiff())
+        self.globals.define("sleep", BuiltinSleep())
 
     def interpret(self, statements):
         try:
             for statement in statements:
                 self.execute(statement)
-        except RuntimeError:
-            # Error is already printed by self.error()
-            # We just need to stop execution.
-            pass
+        except RuntimeError as error:
+            # The batch script expects errors on stdout
+            print(f"Error in {self.filename} at line {error.token.line if error.token else 'unknown'}: {error.message}",
+                  file=sys.stdout)
 
     def execute(self, stmt):
         stmt.accept(self)
@@ -909,45 +977,21 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         finally:
             self.environment = previous
 
-    def evaluate(self, expr):
-        return expr.accept(self)
-
-    def stringify(self, obj):
-        if obj is None:
-            return "nil"
-        if isinstance(obj, bool):
-            return "true" if obj else "false"
-        if isinstance(obj, float):
-            if obj == int(obj):
-                return str(int(obj))
-            # The C version seems to use %.2f for some cases and more precision for others.
-            # Let's try to replicate the behavior based on the test cases.
-            # test_01 expects 3.14 from 3.14159, suggesting truncation or rounding to 2 decimal places.
-            # test_02 expects 3.33 from 10/3.
-            # A simple format to 2 decimal places seems to be the most direct approach.
-            return f"{obj:.2f}"
-        if isinstance(obj, int):
-            return str(obj)
-        if isinstance(obj, list):
-            return f"[{', '.join(self.stringify(e) for e in obj)}]"
-        return str(obj)
-
-    def error(self, token, message):
-        # The batch script expects errors on stdout
-        if token:
-            print(f"Runtime Error in {self.filename} at line {token.line}: "
-                  f"{message}", file=sys.stdout)
-        else:
-            print(f"Runtime Error in {self.filename}: {message}",
-                  file=sys.stdout)
-        raise RuntimeError(token, message)
-
-    # Statement Visitors
-    def visit_expressionstmt_stmt(self, stmt):
-        self.evaluate(stmt.expression)
+    def visit_var_stmt(self, stmt):
+        value = None
+        if stmt.initializer is not None:
+            value = self.evaluate(stmt.initializer)
+        self.environment.define(stmt.name.lexeme, value)
 
     def visit_block_stmt(self, stmt):
         self.execute_block(stmt.statements, Environment(self.environment))
+
+    def visit_expressionstmt_stmt(self, stmt):
+        self.evaluate(stmt.expression)
+
+    def visit_function_stmt(self, stmt):
+        function = MiniScriptFunction(stmt, self.environment)
+        self.environment.define(stmt.name.lexeme, function)
 
     def visit_if_stmt(self, stmt):
         if self.is_truthy(self.evaluate(stmt.condition)):
@@ -955,28 +999,27 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         elif stmt.else_branch is not None:
             self.execute(stmt.else_branch)
 
-    def visit_while_stmt(self, stmt):
-        while self.is_truthy(self.evaluate(stmt.condition)):
-            self.execute(stmt.body)
-
-    def visit_function_stmt(self, stmt):
-        function = MiniScriptFunction(stmt, self.environment)
-        self.environment.define(stmt.name.lexeme, function)
-
     def visit_return_stmt(self, stmt):
         value = None
         if stmt.value is not None:
             value = self.evaluate(stmt.value)
         raise ReturnValue(value)
 
-    def visit_import_stmt(self, stmt):
-        module_path_str = stmt.path_token.literal
-        if not isinstance(module_path_str, str):
-            self.error(stmt.path_token, "Import path must be a string.")
-            return
+    def visit_while_stmt(self, stmt):
+        while self.is_truthy(self.evaluate(stmt.condition)):
+            self.execute(stmt.body)
 
-        # Normalize the module path for the current OS
-        module_path_str = module_path_str.replace('/', os.sep).replace('\\', os.sep)
+    def visit_assert_stmt(self, stmt):
+        condition_val = self.evaluate(stmt.condition)
+        if not self.is_truthy(condition_val):
+            message_val = self.evaluate(stmt.message)
+            raise RuntimeError(
+                stmt.keyword,
+                f"Assertion failed: {self.stringify(message_val)}")
+
+    def visit_import_stmt(self, stmt):
+        module_path = stmt.path_token.literal
+        full_path = None
 
         # --- Path Resolution Logic ---
         search_paths = []
@@ -1001,12 +1044,12 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         found_path = None
         for base_dir in search_paths:
             # Try the path as is
-            test_path = os.path.join(base_dir, module_path_str)
+            test_path = os.path.join(base_dir, module_path)
             if os.path.exists(test_path) and os.path.isfile(test_path):
                 found_path = test_path
                 break
             # Try adding .ms extension
-            if not module_path_str.endswith(".ms"):
+            if not module_path.endswith(".ms"):
                 test_path_ext = test_path + ".ms"
                 if os.path.exists(test_path_ext) and os.path.isfile(test_path_ext):
                     found_path = test_path_ext
@@ -1082,16 +1125,14 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         return None  # Unreachable
 
     def visit_logical_expr(self, expr):
-        # C-style: evaluate both sides for side effects
         left = self.evaluate(expr.left)
-        right = self.evaluate(expr.right)
 
         if expr.operator.type == TokenType.OR:
-            return self.is_truthy(left) or self.is_truthy(right)
-        elif expr.operator.type == TokenType.AND:
-            return self.is_truthy(left) and self.is_truthy(right)
+            if self.is_truthy(left): return True
+        else: # AND
+            if not self.is_truthy(left): return False
 
-        return None  # Unreachable
+        return self.is_truthy(self.evaluate(expr.right))
 
     def visit_binary_expr(self, expr):
         left = self.evaluate(expr.left)
@@ -1153,6 +1194,9 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
 
         return callee.call(self, arguments)
 
+    def evaluate(self, expr):
+        return expr.accept(self)
+
     # Helper methods
     def is_truthy(self, obj):
         if obj is None:
@@ -1180,9 +1224,23 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
             return
         self.error(operator, "Operands must be numbers.")
 
+    def error(self, token, message):
+        raise RuntimeError(token, message)
+
+    def stringify(self, obj):
+        if obj is None: return "nil"
+        if isinstance(obj, float):
+            text = str(obj)
+            if text.endswith(".0"):
+                text = text[:-2]
+            return text
+        if isinstance(obj, bool):
+            return "true" if obj else "false"
+        return str(obj)
+
 
 # =============================================================================
-# 5. MAIN SCRIPT LOGIC
+# 6. MAIN SCRIPT LOGIC
 # =============================================================================
 
 def run(source, filename, interpreter_instance=None):
