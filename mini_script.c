@@ -1,2937 +1,1984 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <stdarg.h>
 #include <stdbool.h>
+#include <ctype.h>
 #include <time.h>
+#include <stdarg.h>
 
 #ifdef _WIN32
 #include <windows.h>
-// Windows doesn't have strptime, provide a simple implementation
-char* strptime_simple(const char* s, const char* format, struct tm* tm) {
-    // Simple implementation for basic formats
-    if (strcmp(format, "%Y-%m-%d") == 0) {
-        if (sscanf(s, "%d-%d-%d", &tm->tm_year, &tm->tm_mon, &tm->tm_mday) == 3) {
-            tm->tm_year -= 1900;
-            tm->tm_mon -= 1;
-            return (char*)s + strlen(s);
-        }
-    } else if (strcmp(format, "%Y-%m-%d %H:%M:%S") == 0) {
-        if (sscanf(s, "%d-%d-%d %d:%d:%d", 
-                   &tm->tm_year, &tm->tm_mon, &tm->tm_mday,
-                   &tm->tm_hour, &tm->tm_min, &tm->tm_sec) == 6) {
-            tm->tm_year -= 1900;
-            tm->tm_mon -= 1;
-            return (char*)s + strlen(s);
-        }
-    }
-    return NULL;
-}
-#define strptime strptime_simple
+#include <io.h>
+#define F_OK 0
+#define access _access
 #else
-// Unix/Linux includes
 #include <unistd.h>
 #endif
 
-#define MAX_TOKEN_LEN 256
-#define MAX_IDENTIFIER_LEN 64
-#define MAX_STRING_LEN 512
-#define MAX_VARIABLES 1000
-#define MAX_FUNCTIONS 100
-#define MAX_PARAMS 10
-#define MAX_STACK_DEPTH 100
-#define MAX_LIST_SIZE 100
-#define MAX_MAP_SIZE 100
-#define MAX_DLL_MODULES 50
-#define MAX_DLL_FUNCTIONS 200
+// =============================================================================
+// 1. TOKENIZER (LEXER)
+// =============================================================================
 
-// Token types
 typedef enum {
-    TOKEN_EOF,
-    TOKEN_IDENTIFIER,
-    TOKEN_NUMBER,
-    TOKEN_STRING,
-    TOKEN_CHAR,
-    TOKEN_PLUS,
-    TOKEN_MINUS,
-    TOKEN_MULTIPLY,
-    TOKEN_DIVIDE,
-    TOKEN_ASSIGN,
-    TOKEN_EQUAL,
-    TOKEN_NOT_EQUAL,
-    TOKEN_LESS,
-    TOKEN_GREATER,
-    TOKEN_LESS_EQUAL,
-    TOKEN_GREATER_EQUAL,
-    TOKEN_AND,
-    TOKEN_OR,
-    TOKEN_NOT,
-    TOKEN_SEMICOLON,
-    TOKEN_COMMA,
-    TOKEN_DOT,
-    TOKEN_LPAREN,
-    TOKEN_RPAREN,
-    TOKEN_LBRACE,
-    TOKEN_RBRACE,
-    TOKEN_LBRACKET,
-    TOKEN_RBRACKET,
-    TOKEN_IF,
-    TOKEN_ELSE,
-    TOKEN_WHILE,
-    TOKEN_FOR,
-    TOKEN_FUNCTION,
-    TOKEN_RETURN,
-    TOKEN_INT,
-    TOKEN_FLOAT,
-    TOKEN_CHAR_TYPE,
-    TOKEN_STRING_TYPE,
-    TOKEN_LIST,
-    TOKEN_MAP,
-    TOKEN_TRUE,
-    TOKEN_FALSE,
-    TOKEN_LOADLIB,
-    TOKEN_GETPROC,
-    TOKEN_FREELIB,
-    TOKEN_CALLEXT,
-    TOKEN_IMPORT
-} ScriptTokenType;
+    // Single-character tokens
+    MS_TOKEN_LPAREN, MS_TOKEN_RPAREN, MS_TOKEN_LBRACE, MS_TOKEN_RBRACE, 
+    MS_TOKEN_LBRACKET, MS_TOKEN_RBRACKET, MS_TOKEN_COMMA, MS_TOKEN_DOT, 
+    MS_TOKEN_MINUS, MS_TOKEN_PLUS, MS_TOKEN_SEMICOLON, MS_TOKEN_DIVIDE, MS_TOKEN_MULTIPLY,
+    
+    // One or two character tokens
+    MS_TOKEN_NOT, MS_TOKEN_NOT_EQUAL, MS_TOKEN_ASSIGN, MS_TOKEN_EQUAL,
+    MS_TOKEN_GREATER, MS_TOKEN_GREATER_EQUAL, MS_TOKEN_LESS, MS_TOKEN_LESS_EQUAL,
+    MS_TOKEN_AND, MS_TOKEN_OR,
+    
+    // Literals
+    MS_TOKEN_IDENTIFIER, MS_TOKEN_STRING, MS_TOKEN_NUMBER, MS_TOKEN_CHAR,
+    
+    // Keywords
+    MS_TOKEN_PRINT, MS_TOKEN_ELSE, MS_TOKEN_FALSE, MS_TOKEN_FOR, MS_TOKEN_FUNCTION,
+    MS_TOKEN_IF, MS_TOKEN_RETURN, MS_TOKEN_TRUE, MS_TOKEN_WHILE, MS_TOKEN_IMPORT, MS_TOKEN_FROM,
+    MS_TOKEN_INT_TYPE, MS_TOKEN_FLOAT_TYPE, MS_TOKEN_CHAR_TYPE, MS_TOKEN_STRING_TYPE,
+    MS_TOKEN_LIST, MS_TOKEN_MAP, MS_TOKEN_LOADLIB, MS_TOKEN_GETPROC, MS_TOKEN_FREELIB,
+    MS_TOKEN_CALLEXT, MS_TOKEN_ASSERT, MS_TOKEN_VAR, MS_TOKEN_NIL,
+    
+    MS_TOKEN_EOF
+} MSTokenType;
 
-// Value types
-typedef enum {
-    TYPE_INT,
-    TYPE_FLOAT,
-    TYPE_CHAR,
-    TYPE_STRING,
-    TYPE_LIST,
-    TYPE_MAP,
-    TYPE_BOOL,
-    TYPE_FILE_HANDLE,
-    TYPE_DLL_HANDLE,
-    TYPE_DLL_FUNCTION
-} ValueType;
-
-// Forward declarations
-struct Value;
-struct MapEntry;
-
-// List structure
 typedef struct {
-    struct Value* elements;
-    int size;
-    int capacity;
-} List;
-
-// Map entry structure
-typedef struct MapEntry {
-    char* key;
-    struct Value* value;
-    struct MapEntry* next;
-} MapEntry;
-
-// Map structure
-typedef struct {
-    MapEntry* buckets[MAX_MAP_SIZE];
-    int size;
-} Map;
-
-#ifdef _WIN32
-// DLL Module structure
-typedef struct {
-    char name[MAX_IDENTIFIER_LEN];
-    HMODULE handle;
-} DllModule;
-
-// DLL Function structure
-typedef struct {
-    char name[MAX_IDENTIFIER_LEN];
-    char module_name[MAX_IDENTIFIER_LEN];
-    FARPROC proc_address;
-    int param_count;
-    ValueType param_types[MAX_PARAMS];
-    ValueType return_type;
-} DllFunction;
-#endif
-
-// Value structure
-typedef struct Value {
-    ValueType type;
+    MSTokenType type;
+    char* lexeme;
     union {
-        int int_val;
-        float float_val;
-        char char_val;
-        char* string_val;
-        List* list_val;
-        Map* map_val;
-        int bool_val;
-        FILE* file_handle;
-#ifdef _WIN32
-        HMODULE dll_handle;
-        FARPROC dll_function;
-#endif
-    };
-} Value;
-
-// Token structure
-typedef struct {
-    ScriptTokenType type;
-    char lexeme[MAX_TOKEN_LEN];
-    Value value;
+        double number;
+        char* string;
+        char character;
+        bool boolean;
+    } literal;
     int line;
 } Token;
 
-// Variable structure
-typedef struct Variable {
-    char name[MAX_IDENTIFIER_LEN];
-    Value value;
-    struct Variable* next;  // For namespace linked lists
-} Variable;
-
-// Function parameter structure
-typedef struct {
-    char name[MAX_IDENTIFIER_LEN];
-    ValueType type;
-} Parameter;
-
-// Function structure
-typedef struct Function {
-    char name[MAX_IDENTIFIER_LEN];
-    Parameter params[MAX_PARAMS];
-    int param_count;
-    char* body_source;
-    ValueType return_type;
-    struct Function* next;  // For namespace linked lists
-} Function;
-
-// Namespace structure
-typedef struct Namespace {
-    char name[MAX_IDENTIFIER_LEN];
-    Variable* variables;     // Namespace variables
-    Function* functions;     // Namespace functions
-    struct Namespace* next;
-} Namespace;
-
-// AST Node types
-typedef enum {
-    NODE_LITERAL,
-    NODE_IDENTIFIER,
-    NODE_BINARY_OP,
-    NODE_UNARY_OP,
-    NODE_ASSIGN,
-    NODE_CALL,
-    NODE_IF,
-    NODE_WHILE,
-    NODE_FOR,
-    NODE_BLOCK,
-    NODE_RETURN,
-    NODE_IMPORT,
-    NODE_LIST_ACCESS,
-    NODE_MAP_ACCESS
-} NodeType;
-
-// AST Node structure
-typedef struct ASTNode {
-    NodeType type;
-    Value value;
-    char identifier[MAX_IDENTIFIER_LEN];
-    char namespace_name[MAX_IDENTIFIER_LEN];  // Add namespace support
-    ScriptTokenType operator;
-    struct ASTNode* left;
-    struct ASTNode* right;
-    struct ASTNode* condition;
-    struct ASTNode* then_branch;
-    struct ASTNode* else_branch;
-    struct ASTNode* init;
-    struct ASTNode* update;
-    struct ASTNode* body;
-    struct ASTNode** statements;
-    int statement_count;
-    struct ASTNode** args;
-    int arg_count;
-} ASTNode;
-
-// Interpreter state
 typedef struct {
     char* source;
-    char* filename;  // Track current filename for error reporting
-    int pos;
+    char* filename;
+    Token* tokens;
+    int token_count;
+    int token_capacity;
+    int start;
+    int current;
     int line;
-    Token current_token;
-    Variable variables[MAX_VARIABLES];
-    int var_count;
-    Function functions[MAX_FUNCTIONS];
-    int func_count;
-    Namespace* namespaces;  // Add namespace tracking
-    Variable stack[MAX_STACK_DEPTH][MAX_VARIABLES];
-    int stack_vars[MAX_STACK_DEPTH];
-    int stack_depth;
+} Lexer;
+
+// Token keyword mapping
+typedef struct {
+    char* text;
+    MSTokenType type;
+} Keyword;
+
+static Keyword keywords[] = {
+    {"print", MS_TOKEN_PRINT}, {"if", MS_TOKEN_IF}, {"else", MS_TOKEN_ELSE},
+    {"while", MS_TOKEN_WHILE}, {"for", MS_TOKEN_FOR}, {"function", MS_TOKEN_FUNCTION},
+    {"return", MS_TOKEN_RETURN}, {"true", MS_TOKEN_TRUE}, {"false", MS_TOKEN_FALSE},
+    {"import", MS_TOKEN_IMPORT}, {"from", MS_TOKEN_FROM}, {"int", MS_TOKEN_INT_TYPE},
+    {"float", MS_TOKEN_FLOAT_TYPE}, {"char", MS_TOKEN_CHAR_TYPE}, 
+    {"string", MS_TOKEN_STRING_TYPE}, {"list", MS_TOKEN_LIST}, {"map", MS_TOKEN_MAP},
+    {"loadlib", MS_TOKEN_LOADLIB}, {"getproc", MS_TOKEN_GETPROC}, 
+    {"freelib", MS_TOKEN_FREELIB}, {"callext", MS_TOKEN_CALLEXT},
+    {"assert", MS_TOKEN_ASSERT}, {"var", MS_TOKEN_VAR}, {"nil", MS_TOKEN_NIL},
+    {NULL, MS_TOKEN_EOF}
+};
+
+// =============================================================================
+// 2. ABSTRACT SYNTAX TREE (AST) NODES
+// =============================================================================
+
+typedef enum {
+    EXPR_ASSIGN, EXPR_BINARY, EXPR_CALL, EXPR_GROUPING, EXPR_LITERAL,
+    EXPR_LIST_LITERAL, EXPR_GET, EXPR_SET, EXPR_LOGICAL, EXPR_UNARY, EXPR_VARIABLE
+} ExprType;
+
+typedef enum {
+    STMT_BLOCK, STMT_EXPRESSION, STMT_PRINT, STMT_FUNCTION, STMT_IF,
+    STMT_RETURN, STMT_WHILE, STMT_FOR, STMT_IMPORT, STMT_ASSERT, STMT_VAR
+} StmtType;
+
+typedef struct Expr Expr;
+typedef struct Stmt Stmt;
+
+typedef struct {
+    union {
+        double number;
+        char* string;
+        char character;
+        bool boolean;
+        struct Expr** elements;  // For lists
+        FILE* file_handle;       // For file handles
+        struct Stmt* function_stmt;  // For user-defined functions
+    } value;
+    enum {
+        VALUE_NIL, VALUE_BOOL, VALUE_NUMBER, VALUE_STRING, 
+        VALUE_CHAR, VALUE_LIST, VALUE_FILE, VALUE_FUNCTION
+    } type;
+    int list_size;  // For lists
+} Value;
+
+struct Expr {
+    ExprType type;
+    union {
+        struct {
+            Token* name;
+            Expr* value;
+        } assign;
+        struct {
+            Expr* left;
+            Token* operator;
+            Expr* right;
+        } binary;
+        struct {
+            Expr* callee;
+            Token* paren;
+            Expr** arguments;
+            int arg_count;
+        } call;
+        struct {
+            Expr* expression;
+        } grouping;
+        struct {
+            Value value;
+        } literal;
+        struct {
+            Expr** elements;
+            int element_count;
+        } list_literal;
+        struct {
+            Expr* object;
+            Expr* index;
+        } get;
+        struct {
+            Expr* object;
+            Expr* index;
+            Expr* value;
+        } set;
+        struct {
+            Expr* left;
+            Token* operator;
+            Expr* right;
+        } logical;
+        struct {
+            Token* operator;
+            Expr* right;
+        } unary;
+        struct {
+            Token* name;
+        } variable;
+    };
+};
+
+struct Stmt {
+    StmtType type;
+    union {
+        struct {
+            Stmt** statements;
+            int stmt_count;
+        } block;
+        struct {
+            Expr* expression;
+        } expression;
+        struct {
+            Expr** expressions;
+            int expr_count;
+        } print;
+        struct {
+            Token* name;
+            Token** params;
+            int param_count;
+            Stmt** body;
+            int body_count;
+        } function;
+        struct {
+            Expr* condition;
+            Stmt* then_branch;
+            Stmt* else_branch;
+        } if_stmt;
+        struct {
+            Token* keyword;
+            Expr* value;
+        } return_stmt;
+        struct {
+            Expr* condition;
+            Stmt* body;
+        } while_stmt;
+        struct {
+            Stmt* initializer;
+            Expr* condition;
+            Expr* increment;
+            Stmt* body;
+        } for_stmt;
+        struct {
+            Token* path_token;
+            Token* namespace;
+        } import;
+        struct {
+            Token* keyword;
+            Expr* condition;
+            Expr* message;
+        } assert_stmt;
+        struct {
+            Token* name;
+            Expr* initializer;
+        } var;
+    };
+};
+
+// =============================================================================
+// 3. PARSER
+// =============================================================================
+
+typedef struct {
+    Token* tokens;
+    int token_count;
+    char* filename;
+    int current;
+} Parser;
+
+// =============================================================================
+// 4. BUILT-IN FUNCTIONS & INTERPRETER
+// =============================================================================
+
+typedef struct Environment Environment;
+
+struct Environment {
+    char** names;
+    Value* values;
+    int count;
+    int capacity;
+    Environment* enclosing;
+};
+
+typedef struct {
+    int arity;
+    Value (*call)(struct Interpreter* interpreter, Value* arguments);
+    char* name;
+} BuiltinFunction;
+
+typedef struct {
+    Token* name;
+    Token** params;
+    int param_count;
+    Stmt** body;
+    int body_count;
+    Environment* closure;
+} UserFunction;
+
+typedef struct Interpreter {
+    Environment* globals;
+    Environment* environment;
+    char* filename;
+    BuiltinFunction* builtins;
+    int builtin_count;
     Value return_value;
-    int has_return;
-#ifdef _WIN32
-    DllModule dll_modules[MAX_DLL_MODULES];
-    int dll_module_count;
-    DllFunction dll_functions[MAX_DLL_FUNCTIONS];
-    int dll_function_count;
-#endif
+    bool has_returned;
 } Interpreter;
 
-// Global interpreter instance
-Interpreter interpreter;
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
-// Function prototypes
-void error(const char* format, ...);
-void init_interpreter(const char* source, const char* filename);
-void next_token();
-Value* create_value(ValueType type);
-void free_value(Value* val);
-List* create_list();
-void list_append(List* list, Value* val);
-Value* list_get(List* list, int index);
-Map* create_map();
-void map_set(Map* map, const char* key, Value* val);
-Value* map_get(Map* map, const char* key);
-unsigned int hash(const char* key);
-ASTNode* parse_expression();
-ASTNode* parse_statement();
-ASTNode* parse_block();
-ASTNode* parse_function();
-Value evaluate(ASTNode* node);
-void execute_statement(ASTNode* node);
-void execute_import(const char* module_path);
-void execute_import_with_namespace(const char* module_path, const char* namespace_name);
-void execute_module_content(const char* content, const char* filename);
-Value call_user_function(Function* func, ASTNode** args, int arg_count);
-Variable* find_variable(const char* name);
-Function* find_function(const char* name);
-void print_value(Value* val);
-#ifdef _WIN32
-HMODULE load_dll(const char* dll_name);
-FARPROC get_dll_function(const char* dll_name, const char* func_name);
-void free_dll(const char* dll_name);
-Value call_external_function(const char* func_name, ASTNode** args, int arg_count);
-DllModule* find_dll_module(const char* name);
-DllFunction* find_dll_function(const char* name);
-#endif
-
-// Namespace management functions
-Namespace* create_namespace(const char* name);
-Namespace* find_namespace(const char* name);
-void add_namespace(Namespace* ns);
-void add_variable_to_namespace(Namespace* ns, Variable* var);
-void add_function_to_namespace(Namespace* ns, Function* func);
-
-// Error handling
-void error(const char* format, ...) {
+void error_exit(const char* message, ...) {
     va_list args;
-    va_start(args, format);
-    
-    // Check if we're very close to the end of the source
-    // If so, it might just be trailing garbage, so don't exit
-    if (interpreter.pos >= strlen(interpreter.source) - 10) {
-        // We're near the end, this might just be trailing characters
-        // Set position to end to trigger EOF
-        interpreter.pos = strlen(interpreter.source);
-        interpreter.current_token.type = TOKEN_EOF;
-        va_end(args);
-        return;
-    }
-    
-    printf("Error in %s at line %d: ", interpreter.filename, interpreter.line);
-    vprintf(format, args);
-    printf("\n");
+    va_start(args, message);
+    vprintf(message, args);
     va_end(args);
     exit(1);
 }
 
-// Initialize interpreter
-void init_interpreter(const char* source, const char* filename) {
-    interpreter.source = strdup(source);
-    interpreter.filename = filename ? strdup(filename) : strdup("<unknown>");
-    interpreter.pos = 0;
-    interpreter.line = 1;
-    interpreter.var_count = 0;
-    interpreter.func_count = 0;
-    interpreter.namespaces = NULL;  // Initialize namespaces
-    interpreter.stack_depth = 0;
-    interpreter.has_return = 0;
-#ifdef _WIN32
-    interpreter.dll_module_count = 0;
-    interpreter.dll_function_count = 0;
-#endif
-    next_token();
-}
-
-// Skip whitespace and comments
-void skip_whitespace() {
-    while (interpreter.pos < strlen(interpreter.source)) {
-        char c = interpreter.source[interpreter.pos];
-        if (c == ' ' || c == '\t' || c == '\r') {
-            interpreter.pos++;
-        } else if (c == '\n') {
-            interpreter.line++;
-            interpreter.pos++;
-        } else if (c == '/' && interpreter.source[interpreter.pos + 1] == '/') {
-            // Skip single line comment
-            while (interpreter.pos < strlen(interpreter.source) && 
-                   interpreter.source[interpreter.pos] != '\n') {
-                interpreter.pos++;
-            }
-        } else {
-            break;
-        }
+char* read_file(const char* path) {
+    FILE* file = fopen(path, "rb");
+    if (file == NULL) {
+        printf("Error: File not found at %s\n", path);
+        return NULL;
     }
+    
+    fseek(file, 0L, SEEK_END);
+    size_t file_size = ftell(file);
+    rewind(file);
+    
+    char* buffer = malloc(file_size + 1);
+    if (buffer == NULL) {
+        fclose(file);
+        error_exit("Not enough memory to read file.\n");
+    }
+    
+    size_t bytes_read = fread(buffer, sizeof(char), file_size, file);
+    if (bytes_read < file_size) {
+        free(buffer);
+        fclose(file);
+        error_exit("Could not read file.\n");
+    }
+    
+    buffer[bytes_read] = '\0';
+    fclose(file);
+    return buffer;
 }
 
-// Read next token
-void next_token() {
-    skip_whitespace();
+// =============================================================================
+// LEXER IMPLEMENTATION
+// =============================================================================
+
+Lexer* create_lexer(char* source, char* filename) {
+    Lexer* lexer = malloc(sizeof(Lexer));
+    lexer->source = source;
+    lexer->filename = filename;
+    lexer->tokens = malloc(sizeof(Token) * 100);
+    lexer->token_count = 0;
+    lexer->token_capacity = 100;
+    lexer->start = 0;
+    lexer->current = 0;
+    lexer->line = 1;
+    return lexer;
+}
+
+bool is_at_end(Lexer* lexer) {
+    return lexer->current >= strlen(lexer->source);
+}
+
+char advance(Lexer* lexer) {
+    return lexer->source[lexer->current++];
+}
+
+char peek(Lexer* lexer) {
+    if (is_at_end(lexer)) return '\0';
+    return lexer->source[lexer->current];
+}
+
+char peek_next(Lexer* lexer) {
+    if (lexer->current + 1 >= strlen(lexer->source)) return '\0';
+    return lexer->source[lexer->current + 1];
+}
+
+bool match(Lexer* lexer, char expected) {
+    if (is_at_end(lexer)) return false;
+    if (lexer->source[lexer->current] != expected) return false;
+    lexer->current++;
+    return true;
+}
+
+void add_token_simple(Lexer* lexer, MSTokenType type) {
+    if (lexer->token_count >= lexer->token_capacity) {
+        lexer->token_capacity *= 2;
+        lexer->tokens = realloc(lexer->tokens, sizeof(Token) * lexer->token_capacity);
+    }
     
-    if (interpreter.pos >= strlen(interpreter.source)) {
-        interpreter.current_token.type = TOKEN_EOF;
+    Token* token = &lexer->tokens[lexer->token_count++];
+    token->type = type;
+    int length = lexer->current - lexer->start;
+    token->lexeme = malloc(length + 1);
+    strncpy(token->lexeme, lexer->source + lexer->start, length);
+    token->lexeme[length] = '\0';
+    token->line = lexer->line;
+}
+
+void add_token_string(Lexer* lexer, MSTokenType type, char* literal) {
+    add_token_simple(lexer, type);
+    Token* token = &lexer->tokens[lexer->token_count - 1];
+    token->literal.string = malloc(strlen(literal) + 1);
+    strcpy(token->literal.string, literal);
+}
+
+void add_token_number(Lexer* lexer, MSTokenType type, double number) {
+    add_token_simple(lexer, type);
+    Token* token = &lexer->tokens[lexer->token_count - 1];
+    token->literal.number = number;
+}
+
+void add_token_char(Lexer* lexer, MSTokenType type, char character) {
+    add_token_simple(lexer, type);
+    Token* token = &lexer->tokens[lexer->token_count - 1];
+    token->literal.character = character;
+}
+
+void add_token_bool(Lexer* lexer, MSTokenType type, bool value) {
+    add_token_simple(lexer, type);
+    Token* token = &lexer->tokens[lexer->token_count - 1];
+    token->literal.boolean = value;
+}
+
+void scan_string(Lexer* lexer) {
+    while (peek(lexer) != '"' && !is_at_end(lexer)) {
+        if (peek(lexer) == '\n') lexer->line++;
+        advance(lexer);
+    }
+    
+    if (is_at_end(lexer)) {
+        printf("Lexer Error in %s at line %d: Unterminated string.\n", 
+               lexer->filename, lexer->line);
         return;
     }
     
-    char c = interpreter.source[interpreter.pos];
-    interpreter.current_token.line = interpreter.line;
+    advance(lexer); // The closing "
     
-    // Single character tokens
+    // Extract string value without quotes
+    int length = lexer->current - lexer->start - 2;
+    char* value = malloc(length + 1);
+    strncpy(value, lexer->source + lexer->start + 1, length);
+    value[length] = '\0';
+    
+    add_token_string(lexer, MS_TOKEN_STRING, value);
+    free(value);
+}
+
+void scan_number(Lexer* lexer) {
+    while (isdigit(peek(lexer))) advance(lexer);
+    
+    if (peek(lexer) == '.' && isdigit(peek_next(lexer))) {
+        advance(lexer); // Consume the .
+        while (isdigit(peek(lexer))) advance(lexer);
+    }
+    
+    int length = lexer->current - lexer->start;
+    char* text = malloc(length + 1);
+    strncpy(text, lexer->source + lexer->start, length);
+    text[length] = '\0';
+    
+    double value = atof(text);
+    add_token_number(lexer, MS_TOKEN_NUMBER, value);
+    free(text);
+}
+
+MSTokenType get_keyword_type(char* text) {
+    for (int i = 0; keywords[i].text != NULL; i++) {
+        if (strcmp(text, keywords[i].text) == 0) {
+            return keywords[i].type;
+        }
+    }
+    return MS_TOKEN_IDENTIFIER;
+}
+
+void scan_identifier(Lexer* lexer) {
+    while (isalnum(peek(lexer)) || peek(lexer) == '_') advance(lexer);
+    
+    int length = lexer->current - lexer->start;
+    char* text = malloc(length + 1);
+    strncpy(text, lexer->source + lexer->start, length);
+    text[length] = '\0';
+    
+    MSTokenType type = get_keyword_type(text);
+    
+    if (type == MS_TOKEN_TRUE) {
+        add_token_bool(lexer, type, true);
+    } else if (type == MS_TOKEN_FALSE) {
+        add_token_bool(lexer, type, false);
+    } else {
+        add_token_simple(lexer, type);
+    }
+    
+    free(text);
+}
+
+void scan_token(Lexer* lexer) {
+    char c = advance(lexer);
+    
     switch (c) {
-        case '+': interpreter.current_token.type = TOKEN_PLUS; interpreter.pos++; return;
-        case '-': interpreter.current_token.type = TOKEN_MINUS; interpreter.pos++; return;
-        case '*': interpreter.current_token.type = TOKEN_MULTIPLY; interpreter.pos++; return;
-        case '/': interpreter.current_token.type = TOKEN_DIVIDE; interpreter.pos++; return;
-        case ';': interpreter.current_token.type = TOKEN_SEMICOLON; interpreter.pos++; return;
-        case ',': interpreter.current_token.type = TOKEN_COMMA; interpreter.pos++; return;
-        case '.': interpreter.current_token.type = TOKEN_DOT; interpreter.pos++; return;
-        case '(': interpreter.current_token.type = TOKEN_LPAREN; interpreter.pos++; return;
-        case ')': interpreter.current_token.type = TOKEN_RPAREN; interpreter.pos++; return;
-        case '{': interpreter.current_token.type = TOKEN_LBRACE; interpreter.pos++; return;
-        case '}': interpreter.current_token.type = TOKEN_RBRACE; interpreter.pos++; return;
-        case '[': interpreter.current_token.type = TOKEN_LBRACKET; interpreter.pos++; return;
-        case ']': interpreter.current_token.type = TOKEN_RBRACKET; interpreter.pos++; return;
-    }
-    
-    // Two character tokens
-    if (c == '=' && interpreter.source[interpreter.pos + 1] == '=') {
-        interpreter.current_token.type = TOKEN_EQUAL;
-        interpreter.pos += 2;
-        return;
-    }
-    if (c == '!' && interpreter.source[interpreter.pos + 1] == '=') {
-        interpreter.current_token.type = TOKEN_NOT_EQUAL;
-        interpreter.pos += 2;
-        return;
-    }
-    if (c == '<' && interpreter.source[interpreter.pos + 1] == '=') {
-        interpreter.current_token.type = TOKEN_LESS_EQUAL;
-        interpreter.pos += 2;
-        return;
-    }
-    if (c == '>' && interpreter.source[interpreter.pos + 1] == '=') {
-        interpreter.current_token.type = TOKEN_GREATER_EQUAL;
-        interpreter.pos += 2;
-        return;
-    }
-    if (c == '&' && interpreter.source[interpreter.pos + 1] == '&') {
-        interpreter.current_token.type = TOKEN_AND;
-        interpreter.pos += 2;
-        return;
-    }
-    if (c == '|' && interpreter.source[interpreter.pos + 1] == '|') {
-        interpreter.current_token.type = TOKEN_OR;
-        interpreter.pos += 2;
-        return;
-    }
-    
-    // Single character comparison operators
-    if (c == '=') { interpreter.current_token.type = TOKEN_ASSIGN; interpreter.pos++; return; }
-    if (c == '<') { interpreter.current_token.type = TOKEN_LESS; interpreter.pos++; return; }
-    if (c == '>') { interpreter.current_token.type = TOKEN_GREATER; interpreter.pos++; return; }
-    if (c == '!') { interpreter.current_token.type = TOKEN_NOT; interpreter.pos++; return; }
-    
-    // String literals
-    if (c == '"') {
-        int start = ++interpreter.pos;
-        while (interpreter.pos < strlen(interpreter.source) && 
-               interpreter.source[interpreter.pos] != '"') {
-            interpreter.pos++;
-        }
-        if (interpreter.pos >= strlen(interpreter.source)) {
-            error("Unterminated string");
-        }
-        int len = interpreter.pos - start;
-        strncpy(interpreter.current_token.lexeme, &interpreter.source[start], len);
-        interpreter.current_token.lexeme[len] = '\0';
-        interpreter.current_token.type = TOKEN_STRING;
-        interpreter.pos++; // Skip closing quote
-        return;
-    }
-    
-    // Character literals
-    if (c == '\'') {
-        interpreter.pos++;
-        if (interpreter.pos >= strlen(interpreter.source)) {
-            error("Unterminated character");
-        }
-        interpreter.current_token.value.type = TYPE_CHAR;
-        interpreter.current_token.value.char_val = interpreter.source[interpreter.pos++];
-        if (interpreter.pos >= strlen(interpreter.source) || 
-            interpreter.source[interpreter.pos] != '\'') {
-            error("Unterminated character");
-        }
-        interpreter.current_token.type = TOKEN_CHAR;
-        interpreter.pos++;
-        return;
-    }
-    
-    // Numbers
-    if (isdigit(c)) {
-        int start = interpreter.pos;
-        int has_dot = 0;
-        while (interpreter.pos < strlen(interpreter.source) && 
-               (isdigit(interpreter.source[interpreter.pos]) || 
-                (!has_dot && interpreter.source[interpreter.pos] == '.'))) {
-            if (interpreter.source[interpreter.pos] == '.') has_dot = 1;
-            interpreter.pos++;
-        }
-        int len = interpreter.pos - start;
-        strncpy(interpreter.current_token.lexeme, &interpreter.source[start], len);
-        interpreter.current_token.lexeme[len] = '\0';
-        interpreter.current_token.type = TOKEN_NUMBER;
-        if (has_dot) {
-            interpreter.current_token.value.type = TYPE_FLOAT;
-            interpreter.current_token.value.float_val = atof(interpreter.current_token.lexeme);
-        } else {
-            interpreter.current_token.value.type = TYPE_INT;
-            interpreter.current_token.value.int_val = atoi(interpreter.current_token.lexeme);
-        }
-        return;
-    }
-    
-    // Identifiers and keywords
-    if (isalpha(c) || c == '_') {
-        int start = interpreter.pos;
-        while (interpreter.pos < strlen(interpreter.source) && 
-               (isalnum(interpreter.source[interpreter.pos]) || 
-                interpreter.source[interpreter.pos] == '_')) {
-            interpreter.pos++;
-        }
-        int len = interpreter.pos - start;
-        strncpy(interpreter.current_token.lexeme, &interpreter.source[start], len);
-        interpreter.current_token.lexeme[len] = '\0';
-        
-        // Check for keywords
-        if (strcmp(interpreter.current_token.lexeme, "if") == 0) {
-            interpreter.current_token.type = TOKEN_IF;
-        } else if (strcmp(interpreter.current_token.lexeme, "else") == 0) {
-            interpreter.current_token.type = TOKEN_ELSE;
-        } else if (strcmp(interpreter.current_token.lexeme, "while") == 0) {
-            interpreter.current_token.type = TOKEN_WHILE;
-        } else if (strcmp(interpreter.current_token.lexeme, "for") == 0) {
-            interpreter.current_token.type = TOKEN_FOR;
-        } else if (strcmp(interpreter.current_token.lexeme, "function") == 0) {
-            interpreter.current_token.type = TOKEN_FUNCTION;
-        } else if (strcmp(interpreter.current_token.lexeme, "return") == 0) {
-            interpreter.current_token.type = TOKEN_RETURN;
-        } else if (strcmp(interpreter.current_token.lexeme, "int") == 0) {
-            interpreter.current_token.type = TOKEN_INT;
-        } else if (strcmp(interpreter.current_token.lexeme, "float") == 0) {
-            interpreter.current_token.type = TOKEN_FLOAT;
-        } else if (strcmp(interpreter.current_token.lexeme, "char") == 0) {
-            interpreter.current_token.type = TOKEN_CHAR_TYPE;
-        } else if (strcmp(interpreter.current_token.lexeme, "string") == 0) {
-            interpreter.current_token.type = TOKEN_STRING_TYPE;
-        } else if (strcmp(interpreter.current_token.lexeme, "list") == 0) {
-            interpreter.current_token.type = TOKEN_LIST;
-        } else if (strcmp(interpreter.current_token.lexeme, "map") == 0) {
-            interpreter.current_token.type = TOKEN_MAP;
-        } else if (strcmp(interpreter.current_token.lexeme, "true") == 0) {
-            interpreter.current_token.type = TOKEN_TRUE;
-            interpreter.current_token.value.type = TYPE_BOOL;
-            interpreter.current_token.value.bool_val = 1;
-        } else if (strcmp(interpreter.current_token.lexeme, "false") == 0) {
-            interpreter.current_token.type = TOKEN_FALSE;
-            interpreter.current_token.value.type = TYPE_BOOL;
-            interpreter.current_token.value.bool_val = 0;
-        } else if (strcmp(interpreter.current_token.lexeme, "loadlib") == 0) {
-            interpreter.current_token.type = TOKEN_LOADLIB;
-        } else if (strcmp(interpreter.current_token.lexeme, "getproc") == 0) {
-            interpreter.current_token.type = TOKEN_GETPROC;
-        } else if (strcmp(interpreter.current_token.lexeme, "freelib") == 0) {
-            interpreter.current_token.type = TOKEN_FREELIB;
-        } else if (strcmp(interpreter.current_token.lexeme, "callext") == 0) {
-            interpreter.current_token.type = TOKEN_CALLEXT;
-        } else if (strcmp(interpreter.current_token.lexeme, "import") == 0) {
-            interpreter.current_token.type = TOKEN_IMPORT;
-        } else {
-            interpreter.current_token.type = TOKEN_IDENTIFIER;
-        }
-        return;
-    }
-    
-    // Check if we're near the end of file and encountering unexpected characters
-    if (interpreter.pos >= strlen(interpreter.source) - 100) {
-        // Near end of file, treat any unexpected character as EOF
-        interpreter.current_token.type = TOKEN_EOF;
-        return;
-    }
-    
-    error("Unexpected character: %c (ASCII %d)", c, (int)c);
-}
-
-// Value creation and management
-Value* create_value(ValueType type) {
-    Value* val = malloc(sizeof(Value));
-    val->type = type;
-    switch (type) {
-        case TYPE_INT: val->int_val = 0; break;
-        case TYPE_FLOAT: val->float_val = 0.0; break;
-        case TYPE_CHAR: val->char_val = '\0'; break;
-        case TYPE_STRING: val->string_val = strdup(""); break;
-        case TYPE_LIST: val->list_val = create_list(); break;
-        case TYPE_MAP: val->map_val = create_map(); break;
-        case TYPE_BOOL: val->bool_val = 0; break;
-#ifdef _WIN32
-        case TYPE_DLL_HANDLE: val->dll_handle = NULL; break;
-        case TYPE_DLL_FUNCTION: val->dll_function = NULL; break;
-#endif
-    }
-    return val;
-}
-
-void free_value(Value* val) {
-    if (!val) return;
-    
-    switch (val->type) {
-        case TYPE_STRING:
-            if (val->string_val) free(val->string_val);
+        case ' ':
+        case '\r':
+        case '\t':
             break;
-        case TYPE_LIST:
-            if (val->list_val) {
-                for (int i = 0; i < val->list_val->size; i++) {
-                    free_value(&val->list_val->elements[i]);
-                }
-                free(val->list_val->elements);
-                free(val->list_val);
+        case '\n':
+            lexer->line++;
+            break;
+        case '(':
+            add_token_simple(lexer, MS_TOKEN_LPAREN);
+            break;
+        case ')':
+            add_token_simple(lexer, MS_TOKEN_RPAREN);
+            break;
+        case '{':
+            add_token_simple(lexer, MS_TOKEN_LBRACE);
+            break;
+        case '}':
+            add_token_simple(lexer, MS_TOKEN_RBRACE);
+            break;
+        case '[':
+            add_token_simple(lexer, MS_TOKEN_LBRACKET);
+            break;
+        case ']':
+            add_token_simple(lexer, MS_TOKEN_RBRACKET);
+            break;
+        case ',':
+            add_token_simple(lexer, MS_TOKEN_COMMA);
+            break;
+        case '.':
+            add_token_simple(lexer, MS_TOKEN_DOT);
+            break;
+        case '-':
+            add_token_simple(lexer, MS_TOKEN_MINUS);
+            break;
+        case '+':
+            add_token_simple(lexer, MS_TOKEN_PLUS);
+            break;
+        case ';':
+            add_token_simple(lexer, MS_TOKEN_SEMICOLON);
+            break;
+        case '*':
+            add_token_simple(lexer, MS_TOKEN_MULTIPLY);
+            break;
+        case '!':
+            add_token_simple(lexer, match(lexer, '=') ? MS_TOKEN_NOT_EQUAL : MS_TOKEN_NOT);
+            break;
+        case '=':
+            add_token_simple(lexer, match(lexer, '=') ? MS_TOKEN_EQUAL : MS_TOKEN_ASSIGN);
+            break;
+        case '<':
+            add_token_simple(lexer, match(lexer, '=') ? MS_TOKEN_LESS_EQUAL : MS_TOKEN_LESS);
+            break;
+        case '>':
+            add_token_simple(lexer, match(lexer, '=') ? MS_TOKEN_GREATER_EQUAL : MS_TOKEN_GREATER);
+            break;
+        case '|':
+            if (match(lexer, '|')) {
+                add_token_simple(lexer, MS_TOKEN_OR);
+            } else {
+                printf("Lexer Error in %s at line %d: Unexpected character: |\n", 
+                       lexer->filename, lexer->line);
             }
             break;
-        case TYPE_MAP:
-            if (val->map_val) {
-                for (int i = 0; i < MAX_MAP_SIZE; i++) {
-                    MapEntry* entry = val->map_val->buckets[i];
-                    while (entry) {
-                        MapEntry* next = entry->next;
-                        free(entry->key);
-                        free_value(entry->value);
-                        free(entry->value);
-                        free(entry);
-                        entry = next;
-                    }
-                }
-                free(val->map_val);
+        case '/':
+            if (match(lexer, '/')) {
+                // Comment - consume until end of line
+                while (peek(lexer) != '\n' && !is_at_end(lexer)) advance(lexer);
+            } else {
+                add_token_simple(lexer, MS_TOKEN_DIVIDE);
             }
             break;
-#ifdef _WIN32
-        case TYPE_DLL_HANDLE:
-            // Don't free DLL handles here - they're managed by the interpreter
+        case '&':
+            if (match(lexer, '&')) {
+                add_token_simple(lexer, MS_TOKEN_AND);
+            } else {
+                printf("Lexer Error in %s at line %d: Unexpected character: &\n", 
+                       lexer->filename, lexer->line);
+            }
             break;
-        case TYPE_DLL_FUNCTION:
-            // Don't free function pointers here - they're managed by the interpreter
+        case '"':
+            scan_string(lexer);
             break;
-#endif
-        default:
-            break;
-    }
-}
-
-// List operations
-List* create_list() {
-    List* list = malloc(sizeof(List));
-    list->elements = malloc(sizeof(Value) * 10);
-    list->size = 0;
-    list->capacity = 10;
-    return list;
-}
-
-void list_append(List* list, Value* val) {
-    if (list->size >= list->capacity) {
-        list->capacity *= 2;
-        list->elements = realloc(list->elements, sizeof(Value) * list->capacity);
-    }
-    list->elements[list->size] = *val;
-    list->size++;
-}
-
-Value* list_get(List* list, int index) {
-    if (index < 0 || index >= list->size) {
-        error("List index out of bounds");
-    }
-    return &list->elements[index];
-}
-
-// Map operations
-unsigned int hash(const char* key) {
-    unsigned int hash = 5381;
-    int c;
-    while ((c = *key++)) {
-        hash = ((hash << 5) + hash) + c;
-    }
-    return hash % MAX_MAP_SIZE;
-}
-
-Map* create_map() {
-    Map* map = malloc(sizeof(Map));
-    for (int i = 0; i < MAX_MAP_SIZE; i++) {
-        map->buckets[i] = NULL;
-    }
-    map->size = 0;
-    return map;
-}
-
-void map_set(Map* map, const char* key, Value* val) {
-    unsigned int index = hash(key);
-    MapEntry* entry = map->buckets[index];
-    
-    // Check if key already exists
-    while (entry) {
-        if (strcmp(entry->key, key) == 0) {
-            free_value(entry->value);
-            *(entry->value) = *val;
-            return;
-        }
-        entry = entry->next;
-    }
-    
-    // Create new entry
-    entry = malloc(sizeof(MapEntry));
-    entry->key = strdup(key);
-    entry->value = malloc(sizeof(Value));
-    *(entry->value) = *val;
-    entry->next = map->buckets[index];
-    map->buckets[index] = entry;
-    map->size++;
-}
-
-Value* map_get(Map* map, const char* key) {
-    unsigned int index = hash(key);
-    MapEntry* entry = map->buckets[index];
-    
-    while (entry) {
-        if (strcmp(entry->key, key) == 0) {
-            return entry->value;
-        }
-        entry = entry->next;
-    }
-    return NULL;
-}
-
-// Namespace management functions
-Namespace* create_namespace(const char* name) {
-    Namespace* ns = (Namespace*)malloc(sizeof(Namespace));
-    strcpy(ns->name, name);
-    ns->variables = NULL;
-    ns->functions = NULL;
-    ns->next = NULL;
-    return ns;
-}
-
-Namespace* find_namespace(const char* name) {
-    Namespace* current = interpreter.namespaces;
-    while (current != NULL) {
-        if (strcmp(current->name, name) == 0) {
-            return current;
-        }
-        current = current->next;
-    }
-    return NULL;
-}
-
-void add_namespace(Namespace* ns) {
-    ns->next = interpreter.namespaces;
-    interpreter.namespaces = ns;
-}
-
-void add_variable_to_namespace(Namespace* ns, Variable* var) {
-    var->next = ns->variables;
-    ns->variables = var;
-}
-
-void add_function_to_namespace(Namespace* ns, Function* func) {
-    func->next = ns->functions;
-    ns->functions = func;
-}
-
-// Variable and function management
-Variable* find_variable(const char* name) {
-    // Check for namespace.variable syntax
-    char* dot = strchr(name, '.');
-    if (dot != NULL) {
-        char ns_name[MAX_IDENTIFIER_LEN];
-        char var_name[MAX_IDENTIFIER_LEN];
-        
-        int ns_len = dot - name;
-        strncpy(ns_name, name, ns_len);
-        ns_name[ns_len] = '\0';
-        strcpy(var_name, dot + 1);
-        
-        Namespace* ns = find_namespace(ns_name);
-        if (ns != NULL) {
-            Variable* current = ns->variables;
-            while (current != NULL) {
-                if (strcmp(current->name, var_name) == 0) {
-                    return current;
-                }
-                current = current->next;
-            }
-        }
-        return NULL;
-    }
-    
-    // Check current stack frame first
-    if (interpreter.stack_depth > 0) {
-        for (int i = 0; i < interpreter.stack_vars[interpreter.stack_depth - 1]; i++) {
-            if (strcmp(interpreter.stack[interpreter.stack_depth - 1][i].name, name) == 0) {
-                return &interpreter.stack[interpreter.stack_depth - 1][i];
-            }
-        }
-    }
-    
-    // Check global variables
-    for (int i = 0; i < interpreter.var_count; i++) {
-        if (strcmp(interpreter.variables[i].name, name) == 0) {
-            return &interpreter.variables[i];
-        }
-    }
-    return NULL;
-}
-
-Function* find_function(const char* name) {
-    // Check for namespace.function syntax
-    char* dot = strchr(name, '.');
-    if (dot != NULL) {
-        char ns_name[MAX_IDENTIFIER_LEN];
-        char func_name[MAX_IDENTIFIER_LEN];
-        
-        int ns_len = dot - name;
-        strncpy(ns_name, name, ns_len);
-        ns_name[ns_len] = '\0';
-        strcpy(func_name, dot + 1);
-        
-        Namespace* ns = find_namespace(ns_name);
-        if (ns != NULL) {
-            Function* current = ns->functions;
-            while (current != NULL) {
-                if (strcmp(current->name, func_name) == 0) {
-                    return current;
-                }
-                current = current->next;
-            }
-        }
-        return NULL;
-    }
-    
-    // Check global functions
-    for (int i = 0; i < interpreter.func_count; i++) {
-        if (strcmp(interpreter.functions[i].name, name) == 0) {
-            return &interpreter.functions[i];
-        }
-    }
-    return NULL;
-}
-
-// AST Node creation
-ASTNode* create_node(NodeType type) {
-    ASTNode* node = malloc(sizeof(ASTNode));
-    memset(node, 0, sizeof(ASTNode));
-    node->type = type;
-    return node;
-}
-
-// Parsing functions
-ASTNode* parse_primary() {
-    ASTNode* node = create_node(NODE_LITERAL);
-    
-    if (interpreter.current_token.type == TOKEN_NUMBER) {
-        node->value = interpreter.current_token.value;
-        next_token();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_STRING) {
-        node->value.type = TYPE_STRING;
-        node->value.string_val = strdup(interpreter.current_token.lexeme);
-        next_token();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_CHAR) {
-        node->value = interpreter.current_token.value;
-        next_token();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_TRUE || 
-        interpreter.current_token.type == TOKEN_FALSE) {
-        node->value = interpreter.current_token.value;
-        next_token();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_IDENTIFIER) {
-        strcpy(node->identifier, interpreter.current_token.lexeme);
-        next_token();
-        
-        // Check for dot notation (namespace.member)
-        if (interpreter.current_token.type == TOKEN_DOT) {
-            next_token(); // consume '.'
-            if (interpreter.current_token.type != TOKEN_IDENTIFIER) {
-                error("Expected identifier after '.'");
-            }
-            
-            // Create a namespace.member identifier
-            char full_name[MAX_IDENTIFIER_LEN * 2 + 2];
-            sprintf(full_name, "%s.%s", node->identifier, interpreter.current_token.lexeme);
-            strcpy(node->identifier, full_name);
-            next_token();
-        }
-        
-        // Check for function call
-        if (interpreter.current_token.type == TOKEN_LPAREN) {
-            node->type = NODE_CALL;
-            next_token(); // consume '('
-            
-            // Parse arguments
-            node->args = malloc(sizeof(ASTNode*) * MAX_PARAMS);
-            node->arg_count = 0;
-            
-            if (interpreter.current_token.type != TOKEN_RPAREN) {
-                do {
-                    node->args[node->arg_count++] = parse_expression();
-                    if (interpreter.current_token.type == TOKEN_COMMA) {
-                        next_token();
-                    } else {
-                        break;
-                    }
-                } while (1);
-            }
-            
-            if (interpreter.current_token.type != TOKEN_RPAREN) {
-                error("Expected ')' after function arguments");
-            }
-            next_token();
-            return node;
-        } else {
-            node->type = NODE_IDENTIFIER;
-            return node;
-        }
-    }
-    
-    if (interpreter.current_token.type == TOKEN_LPAREN) {
-        next_token();
-        node = parse_expression();
-        if (interpreter.current_token.type != TOKEN_RPAREN) {
-            error("Expected ')'");
-        }
-        next_token();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_LBRACKET) {
-        // List literal
-        node->type = NODE_LITERAL;
-        node->value.type = TYPE_LIST;
-        node->value.list_val = create_list();
-        
-        next_token(); // consume '['
-        
-        if (interpreter.current_token.type != TOKEN_RBRACKET) {
-            do {
-                ASTNode* element = parse_expression();
-                Value val = evaluate(element);
-                list_append(node->value.list_val, &val);
-                
-                if (interpreter.current_token.type == TOKEN_COMMA) {
-                    next_token();
+        case '\'':
+            {
+                char char_val = advance(lexer);
+                if (advance(lexer) != '\'') {
+                    printf("Lexer Error in %s at line %d: Unterminated character literal.\n", 
+                           lexer->filename, lexer->line);
                 } else {
-                    break;
+                    add_token_char(lexer, MS_TOKEN_CHAR, char_val);
                 }
-            } while (1);
-        }
-        
-        if (interpreter.current_token.type != TOKEN_RBRACKET) {
-            error("Expected ']'");
-        }
-        next_token();
-        return node;
-    }
-    
-    error("Expected expression");
-    return NULL;
-}
-
-ASTNode* parse_unary() {
-    if (interpreter.current_token.type == TOKEN_MINUS || 
-        interpreter.current_token.type == TOKEN_NOT) {
-        ASTNode* node = create_node(NODE_UNARY_OP);
-        node->operator = interpreter.current_token.type;
-        next_token();
-        node->left = parse_unary();
-        return node;
-    }
-    
-    return parse_primary();
-}
-
-ASTNode* parse_multiplicative() {
-    ASTNode* left = parse_unary();
-    
-    while (interpreter.current_token.type == TOKEN_MULTIPLY || 
-           interpreter.current_token.type == TOKEN_DIVIDE) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_unary();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_additive() {
-    ASTNode* left = parse_multiplicative();
-    
-    while (interpreter.current_token.type == TOKEN_PLUS || 
-           interpreter.current_token.type == TOKEN_MINUS) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_multiplicative();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_relational() {
-    ASTNode* left = parse_additive();
-    
-    while (interpreter.current_token.type == TOKEN_LESS ||
-           interpreter.current_token.type == TOKEN_GREATER ||
-           interpreter.current_token.type == TOKEN_LESS_EQUAL ||
-           interpreter.current_token.type == TOKEN_GREATER_EQUAL) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_additive();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_equality() {
-    ASTNode* left = parse_relational();
-    
-    while (interpreter.current_token.type == TOKEN_EQUAL ||
-           interpreter.current_token.type == TOKEN_NOT_EQUAL) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_relational();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_logical_and() {
-    ASTNode* left = parse_equality();
-    
-    while (interpreter.current_token.type == TOKEN_AND) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_equality();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_logical_or() {
-    ASTNode* left = parse_logical_and();
-    
-    while (interpreter.current_token.type == TOKEN_OR) {
-        ASTNode* node = create_node(NODE_BINARY_OP);
-        node->operator = interpreter.current_token.type;
-        node->left = left;
-        next_token();
-        node->right = parse_logical_and();
-        left = node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_assignment() {
-    ASTNode* left = parse_logical_or();
-    
-    if (interpreter.current_token.type == TOKEN_ASSIGN) {
-        ASTNode* node = create_node(NODE_ASSIGN);
-        node->left = left;
-        next_token();
-        node->right = parse_assignment();
-        return node;
-    }
-    
-    return left;
-}
-
-ASTNode* parse_expression() {
-    return parse_assignment();
-}
-
-ASTNode* parse_statement() {
-    if (interpreter.current_token.type == TOKEN_IF) {
-        ASTNode* node = create_node(NODE_IF);
-        next_token();
-        
-        if (interpreter.current_token.type != TOKEN_LPAREN) {
-            error("Expected '(' after 'if'");
-        }
-        next_token();
-        
-        node->condition = parse_expression();
-        
-        if (interpreter.current_token.type != TOKEN_RPAREN) {
-            error("Expected ')' after if condition");
-        }
-        next_token();
-        
-        node->then_branch = parse_statement();
-        
-        if (interpreter.current_token.type == TOKEN_ELSE) {
-            next_token();
-            node->else_branch = parse_statement();
-        }
-        
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_WHILE) {
-        ASTNode* node = create_node(NODE_WHILE);
-        next_token();
-        
-        if (interpreter.current_token.type != TOKEN_LPAREN) {
-            error("Expected '(' after 'while'");
-        }
-        next_token();
-        
-        node->condition = parse_expression();
-        
-        if (interpreter.current_token.type != TOKEN_RPAREN) {
-            error("Expected ')' after while condition");
-        }
-        next_token();
-        
-        node->body = parse_statement();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_FOR) {
-        ASTNode* node = create_node(NODE_FOR);
-        next_token();
-        
-        if (interpreter.current_token.type != TOKEN_LPAREN) {
-            error("Expected '(' after 'for'");
-        }
-        next_token();
-        
-        // Init
-        if (interpreter.current_token.type != TOKEN_SEMICOLON) {
-            node->init = parse_expression();
-        }
-        if (interpreter.current_token.type != TOKEN_SEMICOLON) {
-            error("Expected ';' after for init");
-        }
-        next_token();
-        
-        // Condition
-        if (interpreter.current_token.type != TOKEN_SEMICOLON) {
-            node->condition = parse_expression();
-        }
-        if (interpreter.current_token.type != TOKEN_SEMICOLON) {
-            error("Expected ';' after for condition");
-        }
-        next_token();
-        
-        // Update
-        if (interpreter.current_token.type != TOKEN_RPAREN) {
-            node->update = parse_expression();
-        }
-        if (interpreter.current_token.type != TOKEN_RPAREN) {
-            error("Expected ')' after for update");
-        }
-        next_token();
-        
-        node->body = parse_statement();
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_RETURN) {
-        ASTNode* node = create_node(NODE_RETURN);
-        next_token();
-        
-        if (interpreter.current_token.type != TOKEN_SEMICOLON) {
-            node->left = parse_expression();
-        }
-        
-        if (interpreter.current_token.type == TOKEN_SEMICOLON) {
-            next_token();
-        }
-        
-        return node;
-    }
-    
-    if (interpreter.current_token.type == TOKEN_IMPORT) {
-        ASTNode* node = create_node(NODE_IMPORT);
-        next_token(); // consume TOKEN_IMPORT
-        
-        // Initialize namespace_name
-        node->namespace_name[0] = '\0';
-        
-        // Check for namespace syntax: import name from "file"
-        if (interpreter.current_token.type == TOKEN_IDENTIFIER) {
-            strcpy(node->namespace_name, interpreter.current_token.lexeme);
-            next_token(); // consume namespace name
-            
-            // Expect "from" keyword
-            if (interpreter.current_token.type != TOKEN_IDENTIFIER || 
-                strcmp(interpreter.current_token.lexeme, "from") != 0) {
-                // If not "from", this might be the old syntax
-                if (interpreter.current_token.type == TOKEN_STRING) {
-                    // Old syntax: import "file" - clear namespace name
-                    node->namespace_name[0] = '\0';
-                    goto parse_string;
-                }
-                error("Expected 'from' after import namespace name or string literal");
             }
-            next_token(); // consume "from"
-        }
-        
-        parse_string:
-        // Get the module path
-        if (interpreter.current_token.type != TOKEN_STRING) {
-            error("Expected string literal after 'import' or 'from'");
-        }
-        
-        // Store the module name/path in the identifier field
-        strcpy(node->identifier, interpreter.current_token.lexeme);
-        next_token();
-        
-        if (interpreter.current_token.type == TOKEN_SEMICOLON) {
-            next_token();
-        }
-        
-        return node;
+            break;
+        default:
+            if (isdigit(c)) {
+                scan_number(lexer);
+            } else if (isalpha(c) || c == '_') {
+                scan_identifier(lexer);
+            } else {
+                printf("Lexer Error in %s at line %d: Unexpected character: %c\n", 
+                       lexer->filename, lexer->line, c);
+            }
+            break;
     }
-    
-    if (interpreter.current_token.type == TOKEN_LBRACE) {
-        return parse_block();
-    }
-    
-    // Expression statement
-    ASTNode* node = parse_expression();
-    if (interpreter.current_token.type == TOKEN_SEMICOLON) {
-        next_token();
-    }
-    return node;
 }
 
-ASTNode* parse_block() {
-    ASTNode* node = create_node(NODE_BLOCK);
-    node->statements = malloc(sizeof(ASTNode*) * 100);
-    node->statement_count = 0;
-    
-    if (interpreter.current_token.type != TOKEN_LBRACE) {
-        error("Expected '{'");
-    }
-    next_token();
-    
-    while (interpreter.current_token.type != TOKEN_RBRACE && 
-           interpreter.current_token.type != TOKEN_EOF) {
-        node->statements[node->statement_count++] = parse_statement();
+Token* scan_tokens(Lexer* lexer) {
+    while (!is_at_end(lexer)) {
+        lexer->start = lexer->current;
+        scan_token(lexer);
     }
     
-    if (interpreter.current_token.type != TOKEN_RBRACE) {
-        error("Expected '}'");
-    }
-    next_token();
-    
-    return node;
+    add_token_simple(lexer, MS_TOKEN_EOF);
+    return lexer->tokens;
 }
 
-// Function parsing
-ASTNode* parse_function() {
-    if (interpreter.current_token.type != TOKEN_FUNCTION) {
-        error("Expected 'function'");
+// =============================================================================
+// PARSER IMPLEMENTATION
+// =============================================================================
+
+Parser* create_parser(Token* tokens, int token_count, char* filename) {
+    Parser* parser = malloc(sizeof(Parser));
+    parser->tokens = tokens;
+    parser->token_count = token_count;
+    parser->filename = filename;
+    parser->current = 0;
+    return parser;
+}
+
+bool parser_is_at_end(Parser* parser) {
+    return parser->tokens[parser->current].type == MS_TOKEN_EOF;
+}
+
+Token* parser_peek(Parser* parser) {
+    return &parser->tokens[parser->current];
+}
+
+Token* parser_previous(Parser* parser) {
+    return &parser->tokens[parser->current - 1];
+}
+
+Token* parser_advance(Parser* parser) {
+    if (!parser_is_at_end(parser)) parser->current++;
+    return parser_previous(parser);
+}
+
+bool parser_check(Parser* parser, MSTokenType type) {
+    if (parser_is_at_end(parser)) return false;
+    return parser_peek(parser)->type == type;
+}
+
+bool parser_match(Parser* parser, int count, ...) {
+    va_list args;
+    va_start(args, count);
+    
+    for (int i = 0; i < count; i++) {
+        MSTokenType type = va_arg(args, MSTokenType);
+        if (parser_check(parser, type)) {
+            parser_advance(parser);
+            va_end(args);
+            return true;
+        }
     }
-    next_token();
     
-    if (interpreter.current_token.type != TOKEN_IDENTIFIER) {
-        error("Expected function name");
+    va_end(args);
+    return false;
+}
+
+// Forward declarations for recursive descent parser
+Expr* expression(Parser* parser);
+Stmt* statement(Parser* parser);
+Value evaluate_expr(struct Interpreter* interpreter, Expr* expr);
+Expr* finish_call(Parser* parser, Expr* callee);
+void execute_stmt(struct Interpreter* interpreter, Stmt* stmt);
+
+Expr* create_literal_expr(Value value) {
+    Expr* expr = malloc(sizeof(Expr));
+    expr->type = EXPR_LITERAL;
+    expr->literal.value = value;
+    return expr;
+}
+
+Expr* create_variable_expr(Token* name) {
+    Expr* expr = malloc(sizeof(Expr));
+    expr->type = EXPR_VARIABLE;
+    expr->variable.name = name;
+    return expr;
+}
+
+Expr* create_assign_expr(Token* name, Expr* value) {
+    Expr* expr = malloc(sizeof(Expr));
+    expr->type = EXPR_ASSIGN;
+    expr->assign.name = name;
+    expr->assign.value = value;
+    return expr;
+}
+
+Expr* create_binary_expr(Expr* left, Token* operator, Expr* right) {
+    Expr* expr = malloc(sizeof(Expr));
+    expr->type = EXPR_BINARY;
+    expr->binary.left = left;
+    expr->binary.operator = operator;
+    expr->binary.right = right;
+    return expr;
+}
+
+Expr* primary(Parser* parser) {
+    if (parser_match(parser, 4, MS_TOKEN_NUMBER, MS_TOKEN_FALSE, MS_TOKEN_TRUE, MS_TOKEN_NIL)) {
+        Token* token = parser_previous(parser);
+        Value value;
+        
+        switch (token->type) {
+            case MS_TOKEN_NUMBER:
+                value.type = VALUE_NUMBER;
+                value.value.number = token->literal.number;
+                break;
+            case MS_TOKEN_TRUE:
+                value.type = VALUE_BOOL;
+                value.value.boolean = true;
+                break;
+            case MS_TOKEN_FALSE:
+                value.type = VALUE_BOOL;
+                value.value.boolean = false;
+                break;
+            case MS_TOKEN_NIL:
+                value.type = VALUE_NIL;
+                break;
+            default:
+                break;
+        }
+        
+        return create_literal_expr(value);
     }
     
-    Function* func = &interpreter.functions[interpreter.func_count++];
-    strcpy(func->name, interpreter.current_token.lexeme);
-    next_token();
-    
-    if (interpreter.current_token.type != TOKEN_LPAREN) {
-        error("Expected '(' after function name");
+    if (parser_match(parser, 1, MS_TOKEN_STRING)) {
+        Token* token = parser_previous(parser);
+        Value value;
+        value.type = VALUE_STRING;
+        value.value.string = malloc(strlen(token->literal.string) + 1);
+        strcpy(value.value.string, token->literal.string);
+        return create_literal_expr(value);
     }
-    next_token();
     
-    func->param_count = 0;
+    if (parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
+        return create_variable_expr(parser_previous(parser));
+    }
+    
+    if (parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+        Expr* expr = expression(parser);
+        if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+            printf("Parse Error: Expect ')' after expression.\n");
+            exit(1);
+        }
+        
+        Expr* grouping = malloc(sizeof(Expr));
+        grouping->type = EXPR_GROUPING;
+        grouping->grouping.expression = expr;
+        return grouping;
+    }
+    
+    if (parser_match(parser, 1, MS_TOKEN_LBRACKET)) {
+        // Parse list literal
+        Expr** elements = malloc(sizeof(Expr*) * 256);  // Max 256 elements for now
+        int element_count = 0;
+        
+        if (!parser_check(parser, MS_TOKEN_RBRACKET)) {
+            do {
+                elements[element_count++] = expression(parser);
+            } while (parser_match(parser, 1, MS_TOKEN_COMMA));
+        }
+        
+        if (!parser_match(parser, 1, MS_TOKEN_RBRACKET)) {
+            printf("Parse Error: Expect ']' after list elements.\n");
+            exit(1);
+        }
+        
+        Expr* list_literal = malloc(sizeof(Expr));
+        list_literal->type = EXPR_LIST_LITERAL;
+        list_literal->list_literal.elements = elements;
+        list_literal->list_literal.element_count = element_count;
+        return list_literal;
+    }
+    
+    printf("Parse Error: Expect expression.\n");
+    exit(1);
+}
+
+Expr* call(Parser* parser) {
+    Expr* expr = primary(parser);
+    
+    while (true) {
+        if (parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+            expr = finish_call(parser, expr);
+        } else if (parser_match(parser, 1, MS_TOKEN_LBRACKET)) {
+            Expr* index = expression(parser);
+            if (!parser_match(parser, 1, MS_TOKEN_RBRACKET)) {
+                printf("Parse Error: Expect ']' after index.\n");
+                exit(1);
+            }
+            
+            Expr* get_expr = malloc(sizeof(Expr));
+            get_expr->type = EXPR_GET;
+            get_expr->get.object = expr;
+            get_expr->get.index = index;
+            expr = get_expr;
+        } else {
+            break;
+        }
+    }
+    
+    return expr;
+}
+
+Expr* finish_call(Parser* parser, Expr* callee) {
+    Expr** arguments = malloc(sizeof(Expr*) * 10);
+    int arg_count = 0;
+    
+    if (!parser_check(parser, MS_TOKEN_RPAREN)) {
+        do {
+            arguments[arg_count++] = expression(parser);
+        } while (parser_match(parser, 1, MS_TOKEN_COMMA));
+    }
+    
+    if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+        printf("Parse Error: Expect ')' after arguments.\n");
+        exit(1);
+    }
+    
+    Expr* call_expr = malloc(sizeof(Expr));
+    call_expr->type = EXPR_CALL;
+    call_expr->call.callee = callee;
+    call_expr->call.arguments = arguments;
+    call_expr->call.arg_count = arg_count;
+    return call_expr;
+}
+
+Expr* unary(Parser* parser) {
+    if (parser_match(parser, 2, MS_TOKEN_NOT, MS_TOKEN_MINUS)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = unary(parser);
+        
+        Expr* expr = malloc(sizeof(Expr));
+        expr->type = EXPR_UNARY;
+        expr->unary.operator = operator;
+        expr->unary.right = right;
+        return expr;
+    }
+    
+    return call(parser);
+}
+
+Expr* factor(Parser* parser) {
+    Expr* expr = unary(parser);
+    
+    while (parser_match(parser, 2, MS_TOKEN_DIVIDE, MS_TOKEN_MULTIPLY)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = unary(parser);
+        expr = create_binary_expr(expr, operator, right);
+    }
+    
+    return expr;
+}
+
+Expr* term(Parser* parser) {
+    Expr* expr = factor(parser);
+    
+    while (parser_match(parser, 2, MS_TOKEN_MINUS, MS_TOKEN_PLUS)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = factor(parser);
+        expr = create_binary_expr(expr, operator, right);
+    }
+    
+    return expr;
+}
+
+Expr* comparison(Parser* parser) {
+    Expr* expr = term(parser);
+    
+    while (parser_match(parser, 4, MS_TOKEN_GREATER, MS_TOKEN_GREATER_EQUAL, MS_TOKEN_LESS, MS_TOKEN_LESS_EQUAL)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = term(parser);
+        expr = create_binary_expr(expr, operator, right);
+    }
+    
+    return expr;
+}
+
+Expr* equality(Parser* parser) {
+    Expr* expr = comparison(parser);
+    
+    while (parser_match(parser, 2, MS_TOKEN_NOT_EQUAL, MS_TOKEN_EQUAL)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = comparison(parser);
+        expr = create_binary_expr(expr, operator, right);
+    }
+    
+    return expr;
+}
+
+Expr* logical_and(Parser* parser) {
+    Expr* expr = equality(parser);
+    
+    while (parser_match(parser, 1, MS_TOKEN_AND)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = equality(parser);
+        
+        Expr* logical = malloc(sizeof(Expr));
+        logical->type = EXPR_LOGICAL;
+        logical->logical.left = expr;
+        logical->logical.operator = operator;
+        logical->logical.right = right;
+        expr = logical;
+    }
+    
+    return expr;
+}
+
+Expr* logical_or(Parser* parser) {
+    Expr* expr = logical_and(parser);
+    
+    while (parser_match(parser, 1, MS_TOKEN_OR)) {
+        Token* operator = parser_previous(parser);
+        Expr* right = logical_and(parser);
+        
+        Expr* logical = malloc(sizeof(Expr));
+        logical->type = EXPR_LOGICAL;
+        logical->logical.left = expr;
+        logical->logical.operator = operator;
+        logical->logical.right = right;
+        expr = logical;
+    }
+    
+    return expr;
+}
+
+Expr* assignment(Parser* parser) {
+    Expr* expr = logical_or(parser);
+    
+    if (parser_match(parser, 1, MS_TOKEN_ASSIGN)) {
+        Expr* value = assignment(parser);
+        
+        if (expr->type == EXPR_VARIABLE) {
+            Token* name = expr->variable.name;
+            return create_assign_expr(name, value);
+        }
+        
+        printf("Parse Error: Invalid assignment target.\n");
+        exit(1);
+    }
+    
+    return expr;
+}
+
+Expr* expression(Parser* parser) {
+    return assignment(parser);
+}
+
+Stmt* expression_statement(Parser* parser) {
+    Expr* expr = expression(parser);
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        printf("Parse Error: Expect ';' after expression.\n");
+        exit(1);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_EXPRESSION;
+    stmt->expression.expression = expr;
+    return stmt;
+}
+
+Stmt* print_statement(Parser* parser) {
+    Expr** expressions = malloc(sizeof(Expr*) * 10);
+    int expr_count = 0;
+    
+    expressions[expr_count++] = expression(parser);
+    
+    while (parser_match(parser, 1, MS_TOKEN_COMMA)) {
+        expressions[expr_count++] = expression(parser);
+    }
+    
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        printf("Parse Error: Expect ';' after value.\n");
+        exit(1);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_PRINT;
+    stmt->print.expressions = expressions;
+    stmt->print.expr_count = expr_count;
+    return stmt;
+}
+
+Stmt* var_statement(Parser* parser) {
+    Token* name = NULL;
+    if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
+        printf("Parse Error: Expect variable name.\n");
+        exit(1);
+    }
+    name = parser_previous(parser);
+    
+    Expr* initializer = NULL;
+    if (parser_match(parser, 1, MS_TOKEN_ASSIGN)) {
+        initializer = expression(parser);
+    }
+    
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        printf("Parse Error: Expect ';' after variable declaration.\n");
+        exit(1);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_VAR;
+    stmt->var.name = name;
+    stmt->var.initializer = initializer;
+    return stmt;
+}
+
+Stmt* assert_statement(Parser* parser) {
+    Expr* condition = expression(parser);
+    
+    if (!parser_match(parser, 1, MS_TOKEN_COMMA)) {
+        printf("Parse Error: Expect ',' after assert condition.\n");
+        exit(1);
+    }
+    
+    Expr* message = expression(parser);
+    
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        printf("Parse Error: Expect ';' after assert message.\n");
+        exit(1);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_ASSERT;
+    stmt->assert_stmt.condition = condition;
+    stmt->assert_stmt.message = message;
+    return stmt;
+}
+
+Stmt* if_statement(Parser* parser) {
+    if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+        printf("Parse Error: Expect '(' after 'if'.\n");
+        exit(1);
+    }
+    
+    Expr* condition = expression(parser);
+    
+    if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+        printf("Parse Error: Expect ')' after if condition.\n");
+        exit(1);
+    }
+    
+    Stmt* then_branch = statement(parser);
+    Stmt* else_branch = NULL;
+    
+    if (parser_match(parser, 1, MS_TOKEN_ELSE)) {
+        else_branch = statement(parser);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_IF;
+    stmt->if_stmt.condition = condition;
+    stmt->if_stmt.then_branch = then_branch;
+    stmt->if_stmt.else_branch = else_branch;
+    return stmt;
+}
+
+Stmt* while_statement(Parser* parser) {
+    if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+        printf("Parse Error: Expect '(' after 'while'.\n");
+        exit(1);
+    }
+    Expr* condition = expression(parser);
+    if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+        printf("Parse Error: Expect ')' after while condition.\n");
+        exit(1);
+    }
+    Stmt* body = statement(parser);
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_WHILE;
+    stmt->while_stmt.condition = condition;
+    stmt->while_stmt.body = body;
+    return stmt;
+}
+
+Stmt* for_statement(Parser* parser) {
+    if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+        printf("Parse Error: Expect '(' after 'for'.\n");
+        exit(1);
+    }
+    
+    // Initializer (can be var declaration or expression statement)
+    Stmt* initializer = NULL;
+    if (parser_match(parser, 1, MS_TOKEN_VAR)) {
+        initializer = var_statement(parser);
+    } else {
+        initializer = expression_statement(parser);
+    }
+    
+    // Condition
+    Expr* condition = expression(parser);
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        printf("Parse Error: Expect ';' after for loop condition.\n");
+        exit(1);
+    }
+    
+    // Increment
+    Expr* increment = expression(parser);
+    if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+        printf("Parse Error: Expect ')' after for clauses.\n");
+        exit(1);
+    }
+    
+    // Body
+    Stmt* body = statement(parser);
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_FOR;
+    stmt->for_stmt.initializer = initializer;
+    stmt->for_stmt.condition = condition;
+    stmt->for_stmt.increment = increment;
+    stmt->for_stmt.body = body;
+    return stmt;
+}
+
+Stmt* function_statement(Parser* parser) {
+    if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
+        printf("Parse Error: Expect function name.\n");
+        exit(1);
+    }
+    Token* name = parser_previous(parser);
+    
+    if (!parser_match(parser, 1, MS_TOKEN_LPAREN)) {
+        printf("Parse Error: Expect '(' after function name.\n");
+        exit(1);
+    }
     
     // Parse parameters
-    if (interpreter.current_token.type != TOKEN_RPAREN) {
+    Token** params = malloc(sizeof(Token*) * 10);  // Max 10 params for now
+    int param_count = 0;
+    
+    if (!parser_check(parser, MS_TOKEN_RPAREN)) {
         do {
-            // Type
-            ValueType type;
-            if (interpreter.current_token.type == TOKEN_INT) {
-                type = TYPE_INT;
-            } else if (interpreter.current_token.type == TOKEN_FLOAT) {
-                type = TYPE_FLOAT;
-            } else if (interpreter.current_token.type == TOKEN_CHAR_TYPE) {
-                type = TYPE_CHAR;
-            } else if (interpreter.current_token.type == TOKEN_STRING_TYPE) {
-                type = TYPE_STRING;
-            } else {
-                error("Expected parameter type");
+            if (!parser_match(parser, 1, MS_TOKEN_IDENTIFIER)) {
+                printf("Parse Error: Expect parameter name.\n");
+                exit(1);
             }
-            next_token();
-            
-            // Name
-            if (interpreter.current_token.type != TOKEN_IDENTIFIER) {
-                error("Expected parameter name");
-            }
-            
-            func->params[func->param_count].type = type;
-            strcpy(func->params[func->param_count].name, interpreter.current_token.lexeme);
-            func->param_count++;
-            next_token();
-            
-            if (interpreter.current_token.type == TOKEN_COMMA) {
-                next_token();
-            } else {
-                break;
-            }
-        } while (1);
+            params[param_count++] = parser_previous(parser);
+        } while (parser_match(parser, 1, MS_TOKEN_COMMA));
     }
     
-    if (interpreter.current_token.type != TOKEN_RPAREN) {
-        error("Expected ')' after parameters");
-    }
-    next_token();
-    
-    // Capture function body source
-    if (interpreter.current_token.type != TOKEN_LBRACE) {
-        error("Expected '{' to start function body");
+    if (!parser_match(parser, 1, MS_TOKEN_RPAREN)) {
+        printf("Parse Error: Expect ')' after parameters.\n");
+        exit(1);
     }
     
-    // Find the function body by manually counting braces in the source
-    int brace_start = interpreter.pos;
-    int pos = interpreter.pos + 1; // Skip opening brace
-    int brace_count = 1;
-    
-    // Manually scan for matching closing brace
-    while (brace_count > 0 && pos < strlen(interpreter.source)) {
-        if (interpreter.source[pos] == '{') {
-            brace_count++;
-        } else if (interpreter.source[pos] == '}') {
-            brace_count--;
-        }
-        pos++;
+    if (!parser_match(parser, 1, MS_TOKEN_LBRACE)) {
+        printf("Parse Error: Expect '{' before function body.\n");
+        exit(1);
     }
     
-    if (brace_count > 0) {
-        error("Unmatched '{' in function body");
+    // Parse function body
+    Stmt** body = malloc(sizeof(Stmt*) * 50);  // Max 50 statements for now
+    int body_count = 0;
+    
+    while (!parser_check(parser, MS_TOKEN_RBRACE) && !parser_is_at_end(parser)) {
+        body[body_count++] = statement(parser);
     }
     
-    // Extract function body (excluding braces)
-    int body_length = pos - brace_start - 2; // -2 to exclude both braces
-    
-    // Bounds checking
-    if (body_length < 0) {
-        error("Invalid function body length");
-    }
-    if (body_length > 10000) { // Reasonable upper limit
-        error("Function body too large");
+    if (!parser_match(parser, 1, MS_TOKEN_RBRACE)) {
+        printf("Parse Error: Expect '}' after function body.\n");
+        exit(1);
     }
     
-    func->body_source = malloc(body_length + 1);
-    if (body_length > 0) {
-        strncpy(func->body_source, &interpreter.source[brace_start + 1], body_length);
-    }
-    func->body_source[body_length] = '\0';
-    
-    // Update parser position to after the function body
-    interpreter.pos = pos;
-    next_token(); // Parse the token after the closing brace
-    
-    return NULL; // Function declarations don't return nodes
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_FUNCTION;
+    stmt->function.name = name;
+    stmt->function.params = params;
+    stmt->function.param_count = param_count;
+    stmt->function.body = body;
+    stmt->function.body_count = body_count;
+    return stmt;
 }
 
-// Value evaluation
-Value evaluate(ASTNode* node) {
-    Value result;
-    result.type = TYPE_INT;
-    result.int_val = 0;
+Stmt* return_statement(Parser* parser) {
+    Token* keyword = parser_previous(parser);
     
-    switch (node->type) {
-        case NODE_LITERAL:
-            return node->value;
-            
-        case NODE_IDENTIFIER: {
-            Variable* var = find_variable(node->identifier);
-            if (!var) {
-                // Special handling for certain cases that might be parsing artifacts
-                if (strcmp(node->identifier, "timestamp") == 0 || 
-                    strcmp(node->identifier, "C") == 0 ||
-                    strlen(node->identifier) <= 2) {
-                    // This might be a parsing artifact from function parameter names
-                    // Return a default value instead of failing
-                    result.type = TYPE_INT;
-                    result.int_val = 0;
-                    return result;
-                }
-                error("Undefined variable: %s", node->identifier);
-            }
-            return var->value;
-        }
-        
-        case NODE_BINARY_OP: {
-            Value left = evaluate(node->left);
-            Value right = evaluate(node->right);
-            
-            // Type promotion and operations
-            switch (node->operator) {
-                case TOKEN_PLUS:
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.type = TYPE_INT;
-                        result.int_val = left.int_val + right.int_val;
-                    } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
-                        result.type = TYPE_STRING;
-                        result.string_val = malloc(strlen(left.string_val) + strlen(right.string_val) + 1);
-                        strcpy(result.string_val, left.string_val);
-                        strcat(result.string_val, right.string_val);
-                    } else {
-                        result.type = TYPE_FLOAT;
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.float_val = l + r;
-                    }
-                    break;
-                    
-                case TOKEN_MINUS:
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.type = TYPE_INT;
-                        result.int_val = left.int_val - right.int_val;
-                    } else {
-                        result.type = TYPE_FLOAT;
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.float_val = l - r;
-                    }
-                    break;
-                    
-                case TOKEN_MULTIPLY:
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.type = TYPE_INT;
-                        result.int_val = left.int_val * right.int_val;
-                    } else {
-                        result.type = TYPE_FLOAT;
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.float_val = l * r;
-                    }
-                    break;
-                    
-                case TOKEN_DIVIDE:
-                    result.type = TYPE_FLOAT;
-                    {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        if (r == 0) error("Division by zero");
-                        result.float_val = l / r;
-                    }
-                    break;
-                    
-                case TOKEN_EQUAL:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val == right.int_val;
-                    } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
-                        result.bool_val = strcmp(left.string_val, right.string_val) == 0;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l == r;
-                    }
-                    break;
-                    
-                case TOKEN_LESS:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val < right.int_val;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l < r;
-                    }
-                    break;
-                    
-                case TOKEN_GREATER:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val > right.int_val;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l > r;
-                    }
-                    break;
-                    
-                case TOKEN_LESS_EQUAL:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val <= right.int_val;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l <= r;
-                    }
-                    break;
-                    
-                case TOKEN_GREATER_EQUAL:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val >= right.int_val;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l >= r;
-                    }
-                    break;
-                    
-                case TOKEN_NOT_EQUAL:
-                    result.type = TYPE_BOOL;
-                    if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                        result.bool_val = left.int_val != right.int_val;
-                    } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
-                        result.bool_val = strcmp(left.string_val, right.string_val) != 0;
-                    } else {
-                        float l = (left.type == TYPE_INT) ? left.int_val : left.float_val;
-                        float r = (right.type == TYPE_INT) ? right.int_val : right.float_val;
-                        result.bool_val = l != r;
-                    }
-                    break;
-                    
-                case TOKEN_AND:
-                    result.type = TYPE_BOOL;
-                    result.bool_val = (left.bool_val || left.int_val) && (right.bool_val || right.int_val);
-                    break;
-                    
-                case TOKEN_OR:
-                    result.type = TYPE_BOOL;
-                    result.bool_val = (left.bool_val || left.int_val) || (right.bool_val || right.int_val);
-                    break;
-                    
-                default:
-                    error("Unknown binary operator");
-            }
-            break;
-        }
-        
-        case NODE_UNARY_OP: {
-            Value operand = evaluate(node->left);
-            
-            switch (node->operator) {
-                case TOKEN_MINUS:
-                    if (operand.type == TYPE_INT) {
-                        result.type = TYPE_INT;
-                        result.int_val = -operand.int_val;
-                    } else {
-                        result.type = TYPE_FLOAT;
-                        result.float_val = -operand.float_val;
-                    }
-                    break;
-                    
-                case TOKEN_NOT:
-                    result.type = TYPE_BOOL;
-                    result.bool_val = !(operand.bool_val || operand.int_val);
-                    break;
-                    
-                default:
-                    error("Unknown unary operator");
-            }
-            break;
-        }
-        
-        case NODE_CALL: {
-            Function* func = find_function(node->identifier);
-            if (!func) {
-                // Built-in functions
-                if (strcmp(node->identifier, "print") == 0) {
-                    for (int i = 0; i < node->arg_count; i++) {
-                        Value arg = evaluate(node->args[i]);
-                        print_value(&arg);
-                        if (i < node->arg_count - 1) printf(" ");
-                    }
-                    printf("\n");
-                    result.type = TYPE_INT;
-                    result.int_val = 0;
-                } else if (strcmp(node->identifier, "len") == 0) {
-                    if (node->arg_count != 1) {
-                        error("len() expects 1 argument");
-                    }
-                    Value arg = evaluate(node->args[0]);
-                    result.type = TYPE_INT;
-                    if (arg.type == TYPE_LIST) {
-                        result.int_val = arg.list_val->size;
-                    } else if (arg.type == TYPE_STRING) {
-                        result.int_val = strlen(arg.string_val);
-                    } else {
-                        error("len() only works on lists and strings");
-                    }
-#ifdef _WIN32
-                } else if (strcmp(node->identifier, "loadlib") == 0) {
-                    if (node->arg_count != 1) {
-                        error("loadlib() expects 1 argument");
-                    }
-                    Value arg = evaluate(node->args[0]);
-                    if (arg.type != TYPE_STRING) {
-                        error("loadlib() expects a string argument");
-                    }
-                    
-                    HMODULE handle = load_dll(arg.string_val);
-                    result.type = TYPE_DLL_HANDLE;
-                    result.dll_handle = handle;
-                    
-                } else if (strcmp(node->identifier, "getproc") == 0) {
-                    if (node->arg_count != 2) {
-                        error("getproc() expects 2 arguments (dll_name, function_name)");
-                    }
-                    Value dll_arg = evaluate(node->args[0]);
-                    Value func_arg = evaluate(node->args[1]);
-                    
-                    if (dll_arg.type != TYPE_STRING || func_arg.type != TYPE_STRING) {
-                        error("getproc() expects string arguments");
-                    }
-                    
-                    FARPROC proc = get_dll_function(dll_arg.string_val, func_arg.string_val);
-                    result.type = TYPE_DLL_FUNCTION;
-                    result.dll_function = proc;
-                    
-                } else if (strcmp(node->identifier, "freelib") == 0) {
-                    if (node->arg_count != 1) {
-                        error("freelib() expects 1 argument");
-                    }
-                    Value arg = evaluate(node->args[0]);
-                    if (arg.type != TYPE_STRING) {
-                        error("freelib() expects a string argument");
-                    }
-                    
-                    free_dll(arg.string_val);
-                    result.type = TYPE_INT;
-                    result.int_val = 0;
-                    
-                } else if (strcmp(node->identifier, "callext") == 0) {
-                    if (node->arg_count < 1) {
-                        error("callext() expects at least 1 argument (function_name, ...)");
-                    }
-                    Value func_arg = evaluate(node->args[0]);
-                    if (func_arg.type != TYPE_STRING) {
-                        error("callext() expects function name as first argument");
-                    }
-                    
-                    // Call the external function with remaining arguments
-                    result = call_external_function(func_arg.string_val, 
-                                                  &node->args[1], 
-                                                  node->arg_count - 1);
-#endif
-                } else if (strcmp(node->identifier, "fopen") == 0) {
-                    if (node->arg_count < 1 || node->arg_count > 2) {
-                        error("fopen() expects 1 or 2 arguments (filename, mode)");
-                    }
-                    Value filename_arg = evaluate(node->args[0]);
-                    if (filename_arg.type != TYPE_STRING) {
-                        error("fopen() expects filename as string");
-                    }
-                    
-                    char* mode = "r"; // default mode
-                    if (node->arg_count == 2) {
-                        Value mode_arg = evaluate(node->args[1]);
-                        if (mode_arg.type != TYPE_STRING) {
-                            error("fopen() expects mode as string");
-                        }
-                        mode = mode_arg.string_val;
-                    }
-                    
-                    FILE* file = fopen(filename_arg.string_val, mode);
-                    result.type = TYPE_FILE_HANDLE;
-                    result.file_handle = file;
-                    
-                } else if (strcmp(node->identifier, "fclose") == 0) {
-                    if (node->arg_count != 1) {
-                        error("fclose() expects 1 argument (file_handle)");
-                    }
-                    Value handle_arg = evaluate(node->args[0]);
-                    if (handle_arg.type != TYPE_FILE_HANDLE) {
-                        error("fclose() expects a file handle");
-                    }
-                    
-                    int close_result = 0;
-                    if (handle_arg.file_handle != NULL) {
-                        close_result = fclose(handle_arg.file_handle);
-                    }
-                    result.type = TYPE_INT;
-                    result.int_val = close_result;
-                    
-                } else if (strcmp(node->identifier, "fread") == 0) {
-                    if (node->arg_count != 1) {
-                        error("fread() expects 1 argument (file_handle)");
-                    }
-                    Value handle_arg = evaluate(node->args[0]);
-                    if (handle_arg.type != TYPE_FILE_HANDLE) {
-                        error("fread() expects a file handle");
-                    }
-                    
-                    if (handle_arg.file_handle == NULL) {
-                        error("Invalid file handle");
-                    }
-                    
-                    // Get file size
-                    fseek(handle_arg.file_handle, 0, SEEK_END);
-                    long file_size = ftell(handle_arg.file_handle);
-                    fseek(handle_arg.file_handle, 0, SEEK_SET);
-                    
-                    // Allocate buffer and read
-                    char* buffer = malloc(file_size + 1);
-                    size_t bytes_read = fread(buffer, 1, file_size, handle_arg.file_handle);
-                    buffer[bytes_read] = '\0';
-                    
-                    result.type = TYPE_STRING;
-                    result.string_val = buffer;
-                    
-                } else if (strcmp(node->identifier, "fwrite") == 0) {
-                    if (node->arg_count != 2) {
-                        error("fwrite() expects 2 arguments (file_handle, content)");
-                    }
-                    Value handle_arg = evaluate(node->args[0]);
-                    Value content_arg = evaluate(node->args[1]);
-                    
-                    if (handle_arg.type != TYPE_FILE_HANDLE) {
-                        error("fwrite() expects a file handle as first argument");
-                    }
-                    if (content_arg.type != TYPE_STRING) {
-                        error("fwrite() expects content as string");
-                    }
-                    
-                    if (handle_arg.file_handle == NULL) {
-                        error("Invalid file handle");
-                    }
-                    
-                    size_t bytes_written = fwrite(content_arg.string_val, 1, 
-                                                strlen(content_arg.string_val), 
-                                                handle_arg.file_handle);
-                    result.type = TYPE_INT;
-                    result.int_val = (int)bytes_written;
-                    
-                } else if (strcmp(node->identifier, "fexists") == 0) {
-                    if (node->arg_count != 1) {
-                        error("fexists() expects 1 argument (filename)");
-                    }
-                    Value filename_arg = evaluate(node->args[0]);
-                    if (filename_arg.type != TYPE_STRING) {
-                        error("fexists() expects filename as string");
-                    }
-                    
-                    FILE* test_file = fopen(filename_arg.string_val, "r");
-                    result.type = TYPE_BOOL;
-                    result.bool_val = (test_file != NULL);
-                    if (test_file != NULL) {
-                        fclose(test_file);
-                    }
-                    
-                } else if (strcmp(node->identifier, "freadline") == 0) {
-                    if (node->arg_count != 1) {
-                        error("freadline() expects 1 argument (file_handle)");
-                    }
-                    Value handle_arg = evaluate(node->args[0]);
-                    if (handle_arg.type != TYPE_FILE_HANDLE) {
-                        error("freadline() expects a file handle");
-                    }
-                    
-                    if (handle_arg.file_handle == NULL) {
-                        error("Invalid file handle");
-                    }
-                    
-                    char buffer[1024];
-                    if (fgets(buffer, sizeof(buffer), handle_arg.file_handle) != NULL) {
-                        // Remove trailing newline if present
-                        size_t len = strlen(buffer);
-                        if (len > 0 && buffer[len-1] == '\n') {
-                            buffer[len-1] = '\0';
-                        }
-                        
-                        char* line = malloc(strlen(buffer) + 1);
-                        strcpy(line, buffer);
-                        result.type = TYPE_STRING;
-                        result.string_val = line;
-                    } else {
-                        result.type = TYPE_STRING;
-                        result.string_val = malloc(1);
-                        result.string_val[0] = '\0';
-                    }
-                    
-                } else if (strcmp(node->identifier, "fwriteline") == 0) {
-                    if (node->arg_count != 2) {
-                        error("fwriteline() expects 2 arguments (file_handle, line)");
-                    }
-                    Value handle_arg = evaluate(node->args[0]);
-                    Value line_arg = evaluate(node->args[1]);
-                    
-                    if (handle_arg.type != TYPE_FILE_HANDLE) {
-                        error("fwriteline() expects a file handle as first argument");
-                    }
-                    if (line_arg.type != TYPE_STRING) {
-                        error("fwriteline() expects line as string");
-                    }
-                    
-                    if (handle_arg.file_handle == NULL) {
-                        error("Invalid file handle");
-                    }
-                    
-                    int chars_written = fprintf(handle_arg.file_handle, "%s\n", line_arg.string_val);
-                    result.type = TYPE_INT;
-                    result.int_val = chars_written;
-                    
-                } else if (strcmp(node->identifier, "fsize") == 0) {
-                    if (node->arg_count != 1) {
-                        error("fsize() expects 1 argument (filename)");
-                    }
-                    Value filename_arg = evaluate(node->args[0]);
-                    if (filename_arg.type != TYPE_STRING) {
-                        error("fsize() expects filename as string");
-                    }
-                    
-                    FILE* file = fopen(filename_arg.string_val, "r");
-                    long file_size = 0;
-                    if (file != NULL) {
-                        fseek(file, 0, SEEK_END);
-                        file_size = ftell(file);
-                        fclose(file);
-                    }
-                    result.type = TYPE_INT;
-                    result.int_val = (int)file_size;
-                    
-                } else if (strcmp(node->identifier, "time_now") == 0) {
-                    if (node->arg_count != 0) {
-                        error("time_now() expects no arguments");
-                    }
-                    
-                    time_t current_time = time(NULL);
-                    result.type = TYPE_INT;
-                    result.int_val = (int)current_time;
-                    
-                } else if (strcmp(node->identifier, "time_format") == 0) {
-                    if (node->arg_count < 1 || node->arg_count > 2) {
-                        error("time_format() expects 1 or 2 arguments (timestamp, format)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_format() expects timestamp as integer");
-                    }
-                    
-                    char* format = "%Y-%m-%d %H:%M:%S"; // default format
-                    if (node->arg_count == 2) {
-                        Value format_arg = evaluate(node->args[1]);
-                        if (format_arg.type != TYPE_STRING) {
-                            error("time_format() expects format as string");
-                        }
-                        format = format_arg.string_val;
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    char* buffer = malloc(256);
-                    strftime(buffer, 256, format, timeinfo);
-                    
-                    result.type = TYPE_STRING;
-                    result.string_val = buffer;
-                    
-                } else if (strcmp(node->identifier, "time_parse") == 0) {
-                    if (node->arg_count != 2) {
-                        error("time_parse() expects 2 arguments (date_string, format)");
-                    }
-                    
-                    Value date_str_arg = evaluate(node->args[0]);
-                    Value format_arg = evaluate(node->args[1]);
-                    
-                    if (date_str_arg.type != TYPE_STRING || format_arg.type != TYPE_STRING) {
-                        error("time_parse() expects string arguments");
-                    }
-                    
-                    struct tm timeinfo = {0};
-                    char* parse_result = strptime(date_str_arg.string_val, format_arg.string_val, &timeinfo);
-                    
-                    if (parse_result == NULL) {
-                        result.type = TYPE_INT;
-                        result.int_val = 0; // Failed to parse
-                    } else {
-                        time_t timestamp = mktime(&timeinfo);
-                        result.type = TYPE_INT;
-                        result.int_val = (int)timestamp;
-                    }
-                    
-                } else if (strcmp(node->identifier, "time_year") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_year() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_year() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_year + 1900;
-                    
-                } else if (strcmp(node->identifier, "time_month") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_month() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_month() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_mon + 1; // 1-12 instead of 0-11
-                    
-                } else if (strcmp(node->identifier, "time_day") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_day() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_day() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_mday;
-                    
-                } else if (strcmp(node->identifier, "time_hour") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_hour() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_hour() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_hour;
-                    
-                } else if (strcmp(node->identifier, "time_minute") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_minute() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_minute() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_min;
-                    
-                } else if (strcmp(node->identifier, "time_second") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_second() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_second() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_sec;
-                    
-                } else if (strcmp(node->identifier, "time_weekday") == 0) {
-                    if (node->arg_count != 1) {
-                        error("time_weekday() expects 1 argument (timestamp)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    if (timestamp_arg.type != TYPE_INT) {
-                        error("time_weekday() expects timestamp as integer");
-                    }
-                    
-                    time_t timestamp = (time_t)timestamp_arg.int_val;
-                    struct tm* timeinfo = localtime(&timestamp);
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timeinfo->tm_wday; // 0=Sunday, 1=Monday, etc.
-                    
-                } else if (strcmp(node->identifier, "time_add") == 0) {
-                    if (node->arg_count != 2) {
-                        error("time_add() expects 2 arguments (timestamp, seconds)");
-                    }
-                    
-                    Value timestamp_arg = evaluate(node->args[0]);
-                    Value seconds_arg = evaluate(node->args[1]);
-                    
-                    if (timestamp_arg.type != TYPE_INT || seconds_arg.type != TYPE_INT) {
-                        error("time_add() expects integer arguments");
-                    }
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = timestamp_arg.int_val + seconds_arg.int_val;
-                    
-                } else if (strcmp(node->identifier, "time_diff") == 0) {
-                    if (node->arg_count != 2) {
-                        error("time_diff() expects 2 arguments (timestamp1, timestamp2)");
-                    }
-                    
-                    Value time1_arg = evaluate(node->args[0]);
-                    Value time2_arg = evaluate(node->args[1]);
-                    
-                    if (time1_arg.type != TYPE_INT || time2_arg.type != TYPE_INT) {
-                        error("time_diff() expects integer arguments");
-                    }
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = time1_arg.int_val - time2_arg.int_val;
-                    
-                } else if (strcmp(node->identifier, "sleep") == 0) {
-                    if (node->arg_count != 1) {
-                        error("sleep() expects 1 argument (seconds)");
-                    }
-                    
-                    Value seconds_arg = evaluate(node->args[0]);
-                    if (seconds_arg.type != TYPE_INT) {
-                        error("sleep() expects seconds as integer");
-                    }
-                    
-                    if (seconds_arg.int_val > 0) {
-#ifdef _WIN32
-                        Sleep(seconds_arg.int_val * 1000); // Windows Sleep takes milliseconds
-#else
-                        sleep(seconds_arg.int_val); // Unix sleep takes seconds
-#endif
-                    }
-                    
-                    result.type = TYPE_INT;
-                    result.int_val = 0;
-                    
-                } else {
-                    error("Unknown function: %s", node->identifier);
-                }
-            } else {
-                // User-defined function call
-                result = call_user_function(func, node->args, node->arg_count);
-            }
-            break;
-        }
-        
-        case NODE_ASSIGN: {
-            // Handle assignment in expression context
-            if (node->left->type != NODE_IDENTIFIER) {
-                error("Invalid assignment target");
-            }
-            
-            Value val = evaluate(node->right);
-            Variable* var = find_variable(node->left->identifier);
-            
-            if (!var) {
-                // Create new variable
-                if (interpreter.stack_depth > 0) {
-                    // Local variable
-                    int idx = interpreter.stack_vars[interpreter.stack_depth - 1]++;
-                    strcpy(interpreter.stack[interpreter.stack_depth - 1][idx].name, 
-                           node->left->identifier);
-                    interpreter.stack[interpreter.stack_depth - 1][idx].value = val;
-                } else {
-                    // Global variable
-                    strcpy(interpreter.variables[interpreter.var_count].name, 
-                           node->left->identifier);
-                    interpreter.variables[interpreter.var_count].value = val;
-                    interpreter.var_count++;
-                }
-            } else {
-                var->value = val;
-            }
-            
-            return val; // Return the assigned value
-        }
-        
-        default:
-            error("Cannot evaluate node type");
+    Expr* value = NULL;
+    if (!parser_check(parser, MS_TOKEN_SEMICOLON) && !parser_check(parser, MS_TOKEN_RBRACE)) {
+        value = expression(parser);
     }
     
-    return result;
+    if (!parser_match(parser, 1, MS_TOKEN_SEMICOLON)) {
+        // Semicolon is optional before }
+        if (!parser_check(parser, MS_TOKEN_RBRACE)) {
+            printf("Parse Error: Expect ';' after return value.\n");
+            exit(1);
+        }
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_RETURN;
+    stmt->return_stmt.keyword = keyword;
+    stmt->return_stmt.value = value;
+    return stmt;
 }
 
-// Statement execution
-void execute_statement(ASTNode* node) {
-    switch (node->type) {
-        case NODE_ASSIGN: {
-            if (node->left->type != NODE_IDENTIFIER) {
-                error("Invalid assignment target");
-            }
-            
-            Value val = evaluate(node->right);
-            Variable* var = find_variable(node->left->identifier);
-            
-            if (!var) {
-                // Create new variable
-                if (interpreter.stack_depth > 0) {
-                    // Local variable
-                    int idx = interpreter.stack_vars[interpreter.stack_depth - 1]++;
-                    strcpy(interpreter.stack[interpreter.stack_depth - 1][idx].name, 
-                           node->left->identifier);
-                    interpreter.stack[interpreter.stack_depth - 1][idx].value = val;
-                } else {
-                    // Global variable
-                    strcpy(interpreter.variables[interpreter.var_count].name, 
-                           node->left->identifier);
-                    interpreter.variables[interpreter.var_count].value = val;
-                    interpreter.var_count++;
-                }
-            } else {
-                var->value = val;
-            }
-            break;
-        }
-        
-        case NODE_IF: {
-            Value condition = evaluate(node->condition);
-            int is_true = (condition.type == TYPE_BOOL) ? condition.bool_val :
-                         (condition.type == TYPE_INT) ? condition.int_val != 0 :
-                         (condition.type == TYPE_FLOAT) ? condition.float_val != 0.0 : 0;
-            
-            if (is_true) {
-                execute_statement(node->then_branch);
-            } else if (node->else_branch) {
-                execute_statement(node->else_branch);
-            }
-            break;
-        }
-        
-        case NODE_WHILE: {
-            while (1) {
-                Value condition = evaluate(node->condition);
-                int is_true = (condition.type == TYPE_BOOL) ? condition.bool_val :
-                             (condition.type == TYPE_INT) ? condition.int_val != 0 :
-                             (condition.type == TYPE_FLOAT) ? condition.float_val != 0.0 : 0;
-                
-                if (!is_true) break;
-                
-                execute_statement(node->body);
-                
-                if (interpreter.has_return) break;
-            }
-            break;
-        }
-        
-        case NODE_FOR: {
-            if (node->init) {
-                execute_statement(node->init);
-            }
-            
-            while (1) {
-                if (node->condition) {
-                    Value condition = evaluate(node->condition);
-                    int is_true = (condition.type == TYPE_BOOL) ? condition.bool_val :
-                                 (condition.type == TYPE_INT) ? condition.int_val != 0 :
-                                 (condition.type == TYPE_FLOAT) ? condition.float_val != 0.0 : 0;
-                    
-                    if (!is_true) break;
-                }
-                
-                execute_statement(node->body);
-                
-                if (interpreter.has_return) break;
-                
-                if (node->update) {
-                    evaluate(node->update);
-                }
-            }
-            break;
-        }
-        
-        case NODE_BLOCK: {
-            for (int i = 0; i < node->statement_count; i++) {
-                execute_statement(node->statements[i]);
-                if (interpreter.has_return) break;
-            }
-            break;
-        }
-        
-        case NODE_RETURN: {
-            if (node->left) {
-                interpreter.return_value = evaluate(node->left);
-            } else {
-                interpreter.return_value.type = TYPE_INT;
-                interpreter.return_value.int_val = 0;
-            }
-            interpreter.has_return = 1;
-            break;
-        }
-        
-        case NODE_IMPORT: {
-            execute_import_with_namespace(node->identifier, node->namespace_name);
-            break;
-        }
-        
-        default:
-            // Expression statement
-            evaluate(node);
-            break;
+Stmt* block_statement(Parser* parser) {
+    Stmt** statements = malloc(sizeof(Stmt*) * 100);
+    int stmt_count = 0;
+    
+    while (!parser_check(parser, MS_TOKEN_RBRACE) && !parser_is_at_end(parser)) {
+        statements[stmt_count++] = statement(parser);
     }
+    
+    if (!parser_match(parser, 1, MS_TOKEN_RBRACE)) {
+        printf("Parse Error: Expect '}' after block.\n");
+        exit(1);
+    }
+    
+    Stmt* stmt = malloc(sizeof(Stmt));
+    stmt->type = STMT_BLOCK;
+    stmt->block.statements = statements;
+    stmt->block.stmt_count = stmt_count;
+    return stmt;
 }
 
-// Function to execute module content with minimal state interference
-void execute_module_content(const char* content, const char* filename) {
-    // Save only the essential parsing context
-    char* original_source = interpreter.source;
-    char* original_filename = interpreter.filename;
-    int original_pos = interpreter.pos;
-    int original_line = interpreter.line;
-    Token original_token = interpreter.current_token;
-    
-    // Backup current function and variable counts
-    int original_func_count = interpreter.func_count;
-    int original_var_count = interpreter.var_count;
-    
-    // Set up for module parsing - don't touch other interpreter state
-    interpreter.source = (char*)content;
-    // Temporarily set filename for error reporting without freeing/allocating
-    interpreter.filename = (char*)filename;
-    interpreter.pos = 0;
-    interpreter.line = 1;
-    
-    // Clear the current token completely and parse first token fresh
-    memset(&interpreter.current_token, 0, sizeof(Token));
-    next_token();
-    
-    // Execute module statements
-    while (interpreter.current_token.type != TOKEN_EOF) {
-        if (interpreter.current_token.type == TOKEN_FUNCTION) {
-            parse_function();
-        } else {
-            ASTNode* stmt = parse_statement();
-            if (stmt) {
-                execute_statement(stmt);
-            }
-        }
+Stmt* statement(Parser* parser) {
+    if (parser_match(parser, 1, MS_TOKEN_PRINT)) {
+        return print_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_VAR)) {
+        return var_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_ASSERT)) {
+        return assert_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_IF)) {
+        return if_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_WHILE)) {
+        return while_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_FOR)) {
+        return for_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_FUNCTION)) {
+        return function_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_RETURN)) {
+        return return_statement(parser);
+    }
+    if (parser_match(parser, 1, MS_TOKEN_LBRACE)) {
+        return block_statement(parser);
     }
     
-    // Restore the parsing context exactly as it was
-    interpreter.source = original_source;
-    interpreter.filename = original_filename;
-    interpreter.pos = original_pos;
-    interpreter.line = original_line;
-    interpreter.current_token = original_token;
-    
-    // Note: Keep the functions and variables that were added during module execution
-    // They remain in interpreter.functions[] and interpreter.variables[]
+    return expression_statement(parser);
 }
 
-void execute_import(const char* module_path) {
-    char full_path[1024];
-    FILE* file = NULL;
+Stmt** parse(Parser* parser) {
+    Stmt** statements = malloc(sizeof(Stmt*) * 100);
+    int stmt_count = 0;
     
-    // First try the module path as-is (relative to current directory)
-    strcpy(full_path, module_path);
-    file = fopen(full_path, "r");
-    
-    if (!file) {
-        // Try with .ms extension if not present
-        if (strstr(module_path, ".ms") == NULL) {
-            sprintf(full_path, "%s.ms", module_path);
-            file = fopen(full_path, "r");
-        }
+    while (!parser_is_at_end(parser)) {
+        statements[stmt_count++] = statement(parser);
     }
     
-    // If still not found, try MODULESPATH environment variable
-    if (!file) {
-        char* modules_path = getenv("MODULESPATH");
-        if (modules_path) {
-            char* path_copy = malloc(strlen(modules_path) + 1);
-            strcpy(path_copy, modules_path);
-            
-            char* path_token = strtok(path_copy, ";");
-            while (path_token && !file) {
-                // Try the exact module path
-                sprintf(full_path, "%s\\%s", path_token, module_path);
-                file = fopen(full_path, "r");
-                
-                // Try with .ms extension
-                if (!file && strstr(module_path, ".ms") == NULL) {
-                    sprintf(full_path, "%s\\%s.ms", path_token, module_path);
-                    file = fopen(full_path, "r");
-                }
-                
-                path_token = strtok(NULL, ";");
-            }
-            
-            free(path_copy);
-        }
-    }
-    
-    if (!file) {
-        error("Cannot find module: %s", module_path);
-        return;
-    }
-    
-    // Read the file content
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* module_source = malloc(file_size + 1);
-    size_t bytes_read = fread(module_source, 1, file_size, file);
-    module_source[file_size] = '\0';
-    fclose(file);
-    
-    // Execute the module content
-    execute_module_content(module_source, full_path);
-    
-    free(module_source);
+    statements[stmt_count] = NULL; // Null terminator
+    return statements;
 }
 
-// Execute import with namespace support
-void execute_import_with_namespace(const char* module_path, const char* namespace_name) {
-    char full_path[1024];
-    FILE* file = NULL;
-    
-    // Find the module file (same logic as execute_import)
-    strcpy(full_path, module_path);
-    file = fopen(full_path, "r");
-    
-    if (!file) {
-        if (strstr(module_path, ".ms") == NULL) {
-            sprintf(full_path, "%s.ms", module_path);
-            file = fopen(full_path, "r");
-        }
+// =============================================================================
+// INTERPRETER IMPLEMENTATION
+// =============================================================================
+
+Environment* create_environment(Environment* enclosing) {
+    Environment* env = malloc(sizeof(Environment));
+    env->names = malloc(sizeof(char*) * 100);
+    env->values = malloc(sizeof(Value) * 100);
+    env->count = 0;
+    env->capacity = 100;
+    env->enclosing = enclosing;
+    return env;
+}
+
+void env_define(Environment* env, char* name, Value value) {
+    if (env->count >= env->capacity) {
+        env->capacity *= 2;
+        env->names = realloc(env->names, sizeof(char*) * env->capacity);
+        env->values = realloc(env->values, sizeof(Value) * env->capacity);
     }
     
-    if (!file) {
-        char* modules_path = getenv("MODULESPATH");
-        if (modules_path) {
-            char* path_copy = malloc(strlen(modules_path) + 1);
-            strcpy(path_copy, modules_path);
-            
-            char* path_token = strtok(path_copy, ";");
-            while (path_token && !file) {
-                sprintf(full_path, "%s\\%s", path_token, module_path);
-                file = fopen(full_path, "r");
-                
-                if (!file && strstr(module_path, ".ms") == NULL) {
-                    sprintf(full_path, "%s\\%s.ms", path_token, module_path);
-                    file = fopen(full_path, "r");
-                }
-                
-                path_token = strtok(NULL, ";");
-            }
-            
-            free(path_copy);
-        }
-    }
-    
-    if (!file) {
-        error("Cannot find module: %s", module_path);
-        return;
-    }
-    
-    // Read the file content
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* module_source = malloc(file_size + 1);
-    size_t bytes_read = fread(module_source, 1, file_size, file);
-    module_source[file_size] = '\0';
-    fclose(file);
-    
-    // If namespace is specified, create isolated execution context
-    if (namespace_name != NULL && strlen(namespace_name) > 0) {
-        // Check if namespace already exists
-        Namespace* existing_ns = find_namespace(namespace_name);
-        if (existing_ns != NULL) {
-            // Namespace already exists, don't re-import
-            free(module_source);
+    env->names[env->count] = malloc(strlen(name) + 1);
+    strcpy(env->names[env->count], name);
+    env->values[env->count] = value;
+    env->count++;
+}
+
+void env_assign(Environment* env, char* name, Value value) {
+    for (int i = 0; i < env->count; i++) {
+        if (strcmp(env->names[i], name) == 0) {
+            env->values[i] = value;
             return;
         }
-        
-        // Save current global state counts only
-        int old_var_count = interpreter.var_count;
-        int old_func_count = interpreter.func_count;
-        
-        // Execute module content normally (adds to global scope temporarily)
-        execute_module_content(module_source, full_path);
-        
-        // Create namespace and move new definitions
-        Namespace* ns = create_namespace(namespace_name);
-        
-        // Move new variables to namespace
-        for (int i = old_var_count; i < interpreter.var_count; i++) {
-            Variable* var = malloc(sizeof(Variable));
-            *var = interpreter.variables[i]; // Copy the variable structure
-            // If it's a string value, duplicate it to avoid dangling pointers
-            if (var->value.type == TYPE_STRING && var->value.string_val) {
-                var->value.string_val = strdup(var->value.string_val);
+    }
+    
+    if (env->enclosing != NULL) {
+        Environment* current = env;
+        while (current != NULL) {
+            for (int i = 0; i < current->count; i++) {
+                if (strcmp(current->names[i], name) == 0) {
+                    current->values[i] = value;
+                    return;
+                }
             }
-            var->next = ns->variables;
-            ns->variables = var;
+            if (current->enclosing == NULL) break;
+            current = current->enclosing;
         }
-        
-        // Move new functions to namespace  
-        for (int i = old_func_count; i < interpreter.func_count; i++) {
-            Function* func = malloc(sizeof(Function));
-            *func = interpreter.functions[i]; // Copy the function structure
-            // Duplicate body_source string to prevent dangling pointers
-            if (func->body_source) {
-                func->body_source = strdup(func->body_source);
-            }
-            func->next = ns->functions;
-            ns->functions = func;
-        }
-        
-        add_namespace(ns);
-        
-        // Remove namespace items from global scope (restore counts)
-        interpreter.var_count = old_var_count;
-        interpreter.func_count = old_func_count;
-        
-        // Clear the entries that were moved to namespace
-        for (int i = old_var_count; i < MAX_VARIABLES; i++) {
-            memset(&interpreter.variables[i], 0, sizeof(Variable));
-        }
-        for (int i = old_func_count; i < MAX_FUNCTIONS; i++) {
-            memset(&interpreter.functions[i], 0, sizeof(Function));
-        }
+        // If not found, assign to global scope
+        current->values[current->count] = value;
+        current->names[current->count] = malloc(strlen(name) + 1);
+        strcpy(current->names[current->count], name);
+        current->count++;
     } else {
-        // No namespace specified, execute normally (add to global scope)
-        execute_module_content(module_source, full_path);
+        // Assign to current environment
+        env_define(env, name, value);
     }
-    
-    free(module_source);
 }
-
-// Function to execute function body without any parser state interference
-void execute_function_body(const char* body_source) {
-    // Create a temporary buffer for the complete function code
-    size_t body_len = strlen(body_source);
-    char* temp_code = malloc(body_len + 20); // Extra space for wrapping
-    
-    // We'll execute the body as a complete mini-program
-    // Just execute the statements directly without changing main parser state
-    strcpy(temp_code, body_source);
-    
-    // Store the current function execution context
-    char* old_source = interpreter.source;
-    int old_pos = interpreter.pos;
-    int old_line = interpreter.line;
-    Token old_token = interpreter.current_token;
-    
-    // Execute in a temporary context
-    interpreter.source = temp_code;
-    interpreter.pos = 0;
-    interpreter.line = 1;
-    next_token();
-    
-    // Execute statements until return or end
-    while (interpreter.current_token.type != TOKEN_EOF && !interpreter.has_return) {
-        ASTNode* stmt = parse_statement();
-        if (stmt) {
-            execute_statement(stmt);
+Value env_get(Environment* env, char* name) {
+    for (int i = 0; i < env->count; i++) {
+        if (strcmp(env->names[i], name) == 0) {
+            return env->values[i];
         }
     }
     
-    // Restore the exact parser state - this time with no token copying issues
-    interpreter.source = old_source;
-    interpreter.pos = old_pos;
-    interpreter.line = old_line;
-    interpreter.current_token = old_token;
+    if (env->enclosing != NULL) {
+        return env_get(env->enclosing, name);
+    }
     
-    free(temp_code);
+    printf("Runtime Error: Undefined variable '%s'.\n", name);
+    exit(1);
 }
 
-Value call_user_function(Function* func, ASTNode** args, int arg_count) {
+char* value_to_string(Value value) {
+    static char buffer[256];
+    
+    switch (value.type) {
+        case VALUE_NIL:
+            strcpy(buffer, "nil");
+            break;
+        case VALUE_BOOL:
+            strcpy(buffer, value.value.boolean ? "true" : "false");
+            break;
+        case VALUE_NUMBER:
+            {
+                double num = value.value.number;
+                if (num == (int)num) {
+                    sprintf(buffer, "%d", (int)num);
+                } else {
+                    sprintf(buffer, "%g", num);
+                }
+            }
+            break;
+        case VALUE_STRING:
+            return value.value.string;
+        case VALUE_CHAR:
+            sprintf(buffer, "%c", value.value.character);
+            break;
+        default:
+            strcpy(buffer, "unknown");
+            break;
+    }
+    
+    return buffer;
+}
+
+char* value_to_string_alloc(Value value) {
+    switch (value.type) {
+        case VALUE_NIL:
+            {
+                char* result = malloc(4);
+                strcpy(result, "nil");
+                return result;
+            }
+        case VALUE_BOOL:
+            {
+                char* result = malloc(6);
+                strcpy(result, value.value.boolean ? "true" : "false");
+                return result;
+            }
+        case VALUE_NUMBER:
+            {
+                char* result = malloc(32);
+                double num = value.value.number;
+                if (num == (int)num) {
+                    sprintf(result, "%d", (int)num);
+                } else {
+                    sprintf(result, "%g", num);
+                }
+                return result;
+            }
+        case VALUE_STRING:
+            {
+                char* result = malloc(strlen(value.value.string) + 1);
+                strcpy(result, value.value.string);
+                return result;
+            }
+        case VALUE_CHAR:
+            {
+                char* result = malloc(2);
+                sprintf(result, "%c", value.value.character);
+                return result;
+            }
+        default:
+            {
+                char* result = malloc(8);
+                strcpy(result, "unknown");
+                return result;
+            }
+    }
+}
+
+bool is_truthy(Value value) {
+    switch (value.type) {
+        case VALUE_NIL:
+            return false;
+        case VALUE_BOOL:
+            return value.value.boolean;
+        case VALUE_NUMBER:
+            return value.value.number != 0;
+        default:
+            return true;
+    }
+}
+
+Value evaluate_literal(Interpreter* interpreter, Expr* expr) {
+    return expr->literal.value;
+}
+
+Value evaluate_variable(Interpreter* interpreter, Expr* expr) {
+    return env_get(interpreter->environment, expr->variable.name->lexeme);
+}
+
+Value evaluate_binary(Interpreter* interpreter, Expr* expr) {
+    Value left = evaluate_expr(interpreter, expr->binary.left);
+    Value right = evaluate_expr(interpreter, expr->binary.right);
+    MSTokenType op = expr->binary.operator->type;
+    
     Value result;
-    result.type = TYPE_INT;
-    result.int_val = 0;
+    result.type = VALUE_NUMBER;
     
-    // Check parameter count
-    if (arg_count != func->param_count) {
-        error("Function %s expects %d arguments, got %d", 
-              func->name, func->param_count, arg_count);
+    if (op == MS_TOKEN_PLUS) {
+        if (left.type == VALUE_NUMBER && right.type == VALUE_NUMBER) {
+            result.value.number = left.value.number + right.value.number;
+        } else {
+            // String concatenation
+            result.type = VALUE_STRING;
+            char* left_str = value_to_string_alloc(left);
+            char* right_str = value_to_string_alloc(right);
+            result.value.string = malloc(strlen(left_str) + strlen(right_str) + 1);
+            strcpy(result.value.string, left_str);
+            strcat(result.value.string, right_str);
+            
+            if (left.type != VALUE_STRING) free(left_str);
+            if (right.type != VALUE_STRING) free(right_str);
+        }
+    } else if (op == MS_TOKEN_MINUS) {
+        result.value.number = left.value.number - right.value.number;
+    } else if (op == MS_TOKEN_MULTIPLY) {
+        result.value.number = left.value.number * right.value.number;
+    } else if (op == MS_TOKEN_DIVIDE) {
+        if (right.value.number == 0) {
+            printf("Runtime Error: Division by zero.\n");
+            exit(1);
+        }
+        result.value.number = left.value.number / right.value.number;
+    } else if (op == MS_TOKEN_GREATER) {
+        result.type = VALUE_BOOL;
+        result.value.boolean = left.value.number > right.value.number;
+    } else if (op == MS_TOKEN_GREATER_EQUAL) {
+        result.type = VALUE_BOOL;
+        result.value.boolean = left.value.number >= right.value.number;
+    } else if (op == MS_TOKEN_LESS) {
+        result.type = VALUE_BOOL;
+        result.value.boolean = left.value.number < right.value.number;
+    } else if (op == MS_TOKEN_LESS_EQUAL) {
+        result.type = VALUE_BOOL;
+        result.value.boolean = left.value.number <= right.value.number;
+    } else if (op == MS_TOKEN_EQUAL) {
+        result.type = VALUE_BOOL;
+        if (left.type != right.type) {
+            result.value.boolean = false;
+        } else if (left.type == VALUE_NUMBER) {
+            result.value.boolean = left.value.number == right.value.number;
+        } else if (left.type == VALUE_BOOL) {
+            result.value.boolean = left.value.boolean == right.value.boolean;
+        } else if (left.type == VALUE_STRING) {
+            result.value.boolean = strcmp(left.value.string, right.value.string) == 0;
+        } else {
+            result.value.boolean = false;
+        }
+    } else if (op == MS_TOKEN_NOT_EQUAL) {
+        result.type = VALUE_BOOL;
+        if (left.type != right.type) {
+            result.value.boolean = true;
+        } else if (left.type == VALUE_NUMBER) {
+            result.value.boolean = left.value.number != right.value.number;
+        } else if (left.type == VALUE_BOOL) {
+            result.value.boolean = left.value.boolean != right.value.boolean;
+        } else if (left.type == VALUE_STRING) {
+            result.value.boolean = strcmp(left.value.string, right.value.string) != 0;
+        } else {
+            result.value.boolean = true;
+        }
     }
-    
-    // Save current variable state
-    int old_var_count = interpreter.var_count;
-    Variable old_vars[MAX_VARIABLES];
-    for (int i = 0; i < interpreter.var_count; i++) {
-        old_vars[i] = interpreter.variables[i];
-    }
-    
-    // Push function parameters as local variables
-    interpreter.stack_depth++;
-    if (interpreter.stack_depth >= MAX_STACK_DEPTH) {
-        error("Stack overflow");
-    }
-    interpreter.stack_vars[interpreter.stack_depth - 1] = 0;
-    
-    // Set up function parameters
-    for (int i = 0; i < func->param_count; i++) {
-        Value arg_value = evaluate(args[i]);
-        
-        // Add parameter as local variable
-        int idx = interpreter.stack_vars[interpreter.stack_depth - 1]++;
-        strcpy(interpreter.stack[interpreter.stack_depth - 1][idx].name, 
-               func->params[i].name);
-        interpreter.stack[interpreter.stack_depth - 1][idx].value = arg_value;
-    }
-    
-    // Save function execution state
-    int old_has_return = interpreter.has_return;
-    Value old_return_value = interpreter.return_value;
-    
-    // Execute function body
-    interpreter.has_return = 0;
-    execute_function_body(func->body_source);
-    
-    // Get return value
-    if (interpreter.has_return) {
-        result = interpreter.return_value;
-    }
-    
-    // Restore function execution state
-    interpreter.has_return = old_has_return;
-    interpreter.return_value = old_return_value;
-    
-    // Pop stack
-    interpreter.stack_depth--;
     
     return result;
 }
 
-// Print value utility
-void print_value(Value* val) {
-    switch (val->type) {
-        case TYPE_INT:
-            printf("%d", val->int_val);
-            break;
-        case TYPE_FLOAT:
-            printf("%.2f", val->float_val);
-            break;
-        case TYPE_CHAR:
-            printf("%c", val->char_val);
-            break;
-        case TYPE_STRING:
-            printf("%s", val->string_val);
-            break;
-        case TYPE_BOOL:
-            printf("%s", val->bool_val ? "true" : "false");
-            break;
-        case TYPE_LIST:
-            printf("[");
-            for (int i = 0; i < val->list_val->size; i++) {
-                print_value(&val->list_val->elements[i]);
-                if (i < val->list_val->size - 1) printf(", ");
-            }
-            printf("]");
-            break;
-        case TYPE_MAP:
-            printf("{map}");
-            break;
-        case TYPE_FILE_HANDLE:
-            printf("<file_handle:0x%p>", (void*)val->file_handle);
-            break;
-#ifdef _WIN32
-        case TYPE_DLL_HANDLE:
-            printf("<dll_handle:0x%p>", (void*)val->dll_handle);
-            break;
-        case TYPE_DLL_FUNCTION:
-            printf("<dll_function:0x%p>", (void*)val->dll_function);
-            break;
-#endif
-    }
-}
-
-#ifdef _WIN32
-// DLL Management Functions
-
-DllModule* find_dll_module(const char* name) {
-    for (int i = 0; i < interpreter.dll_module_count; i++) {
-        if (strcmp(interpreter.dll_modules[i].name, name) == 0) {
-            return &interpreter.dll_modules[i];
-        }
-    }
-    return NULL;
-}
-
-DllFunction* find_dll_function(const char* name) {
-    for (int i = 0; i < interpreter.dll_function_count; i++) {
-        if (strcmp(interpreter.dll_functions[i].name, name) == 0) {
-            return &interpreter.dll_functions[i];
-        }
-    }
-    return NULL;
-}
-
-HMODULE load_dll(const char* dll_name) {
-    // Check if already loaded
-    DllModule* existing = find_dll_module(dll_name);
-    if (existing) {
-        return existing->handle;
-    }
+Value evaluate_unary(Interpreter* interpreter, Expr* expr) {
+    Value right = evaluate_expr(interpreter, expr->unary.right);
+    MSTokenType op = expr->unary.operator->type;
     
-    // Convert to wide string for LoadLibrary
-    int len = strlen(dll_name) + 1;
-    wchar_t* wide_name = malloc(len * sizeof(wchar_t));
-    MultiByteToWideChar(CP_ACP, 0, dll_name, -1, wide_name, len);
-    
-    HMODULE handle = LoadLibrary(wide_name);
-    free(wide_name);
-    
-    if (handle != NULL) {
-        // Store the module
-        DllModule* module = &interpreter.dll_modules[interpreter.dll_module_count++];
-        strcpy(module->name, dll_name);
-        module->handle = handle;
-        
-        printf("Loaded DLL: %s\n", dll_name);
-    } else {
-        DWORD win_error = GetLastError();
-        error("Failed to load DLL '%s'. Error code: %lu", dll_name, win_error);
-    }
-    
-    return handle;
-}
-
-FARPROC get_dll_function(const char* dll_name, const char* func_name) {
-    DllModule* module = find_dll_module(dll_name);
-    if (!module) {
-        error("DLL '%s' not loaded", dll_name);
-    }
-    
-    FARPROC proc = GetProcAddress(module->handle, func_name);
-    if (proc != NULL) {
-        // Store the function
-        DllFunction* func = &interpreter.dll_functions[interpreter.dll_function_count++];
-        strcpy(func->name, func_name);
-        strcpy(func->module_name, dll_name);
-        func->proc_address = proc;
-        func->param_count = 0; // Will be set when called
-        func->return_type = TYPE_INT; // Default return type
-        
-        printf("Got function address for: %s from %s\n", func_name, dll_name);
-    } else {
-        error("Function '%s' not found in DLL '%s'", func_name, dll_name);
-    }
-    
-    return proc;
-}
-
-void free_dll(const char* dll_name) {
-    DllModule* module = find_dll_module(dll_name);
-    if (module) {
-        FreeLibrary(module->handle);
-        printf("Freed DLL: %s\n", dll_name);
-        
-        // Remove from array (simple implementation - just mark as invalid)
-        module->handle = NULL;
-        module->name[0] = '\0';
-    }
-}
-
-Value call_external_function(const char* func_name, ASTNode** args, int arg_count) {
     Value result;
-    result.type = TYPE_INT;
-    result.int_val = 0;
     
-    DllFunction* func = find_dll_function(func_name);
-    if (!func) {
-        error("External function '%s' not found", func_name);
-    }
-    
-    // Simple implementation for MessageBoxA-style functions
-    // This is a demonstration - in a real implementation you'd need
-    // more sophisticated type conversion and calling conventions
-    
-    if (strcmp(func_name, "MessageBoxA") == 0 && arg_count == 4) {
-        // Expected signature: int MessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
-        Value arg0 = evaluate(args[0]); // hWnd (usually NULL)
-        Value arg1 = evaluate(args[1]); // lpText
-        Value arg2 = evaluate(args[2]); // lpCaption  
-        Value arg3 = evaluate(args[3]); // uType
-        
-        // Convert arguments
-        HWND hWnd = (HWND)(arg0.type == TYPE_INT ? (void*)(intptr_t)arg0.int_val : NULL);
-        LPCSTR lpText = (arg1.type == TYPE_STRING ? arg1.string_val : "");
-        LPCSTR lpCaption = (arg2.type == TYPE_STRING ? arg2.string_val : "");
-        UINT uType = (arg3.type == TYPE_INT ? (UINT)arg3.int_val : 0);
-        
-        // Call the function
-        typedef int (WINAPI *MessageBoxAFunc)(HWND, LPCSTR, LPCSTR, UINT);
-        MessageBoxAFunc msgbox = (MessageBoxAFunc)func->proc_address;
-        
-        int return_val = msgbox(hWnd, lpText, lpCaption, uType);
-        
-        result.type = TYPE_INT;
-        result.int_val = return_val;
-    } else {
-        error("Unsupported external function call: %s with %d arguments", func_name, arg_count);
+    if (op == MS_TOKEN_MINUS) {
+        result.type = VALUE_NUMBER;
+        result.value.number = -right.value.number;
+    } else if (op == MS_TOKEN_NOT) {
+        result.type = VALUE_BOOL;
+        result.value.boolean = !is_truthy(right);
     }
     
     return result;
 }
-#endif
 
-// Main interpreter function
-void interpret(const char* source, const char* filename) {
-    init_interpreter(source, filename);
-    
-    while (interpreter.current_token.type != TOKEN_EOF) {
-        if (interpreter.current_token.type == TOKEN_FUNCTION) {
-            parse_function();
-        } else {
-            ASTNode* stmt = parse_statement();
-            execute_statement(stmt);
-        }
-    }
+Value evaluate_assign(Interpreter* interpreter, Expr* expr) {
+    Value value = evaluate_expr(interpreter, expr->assign.value);
+    env_assign(interpreter->environment, expr->assign.name->lexeme, value);
+    return value;
 }
 
-// File reading utility
-char* read_file(const char* filename) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        printf("Error: Could not open file '%s'\n", filename);
-        return NULL;
-    }
-    
-    // Get file size
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    // Allocate buffer and read file
-    char* content = malloc(length + 1);
-    if (!content) {
-        printf("Error: Could not allocate memory for file '%s'\n", filename);
-        fclose(file);
-        return NULL;
-    }
-    
-    fread(content, 1, length, file);
-    content[length] = '\0';
-    fclose(file);
-    
-    return content;
-}
-
-// Print usage information
-void print_usage(const char* program_name) {
-    printf("Mini Script Language Interpreter\n");
-    printf("=================================\n\n");
-    printf("Usage: %s [script_file]\n\n", program_name);
-    printf("Arguments:\n");
-    printf("  script_file    Path to the Mini Script file to execute (.ms extension recommended)\n");
-    printf("  (no args)      Start interactive REPL mode\n");
-    printf("  -h, --help     Show this help message\n\n");
-    printf("Examples:\n");
-    printf("  %s script.ms             # Run script.ms\n", program_name);
-    printf("  %s scripts/examples.ms   # Run all built-in examples\n", program_name);
-    printf("  %s examples/1_arithmetic.ms  # Run arithmetic example\n", program_name);
-    printf("  %s dll_demo.ms           # Run DLL demonstration\n", program_name);
-    printf("\n");
-    printf("Built-in Examples:\n");
-    printf("  scripts/examples.ms                 # All examples\n");
-    printf("  examples/1_arithmetic.ms            # Basic arithmetic\n");
-    printf("  examples/2_control_flow.ms          # If/else statements\n");
-    printf("  examples/3_loops.ms                 # While and for loops\n");
-    printf("  examples/4_lists.ms                 # List operations\n");
-    printf("  examples/5_strings.ms               # String manipulation\n");
-    printf("  examples/6_boolean_logic.ms         # Boolean operations\n");
-    printf("  examples/7_complex_expressions.ms   # Complex math\n");
-    printf("\n");
-    printf("File Extensions:\n");
-    printf("  .ms     Mini Script files\n");
-    printf("  .txt    Plain text script files\n");
-    printf("\n");
-}
-
-void run_repl() {
-    printf("Mini Script Language Interpreter - REPL Mode\n");
-    printf("=============================================\n");
-    printf("Type Mini Script commands or 'exit' to quit.\n");
-    printf("Examples: x = 10; print(x); time.now(); etc.\n");
-    printf("---------------------------------------------\n\n");
-    
-    char input[1024];
-    int line_number = 1;
-    
-    while (1) {
-        printf("ms[%d]> ", line_number);
-        fflush(stdout);
+Value evaluate_call(Interpreter* interpreter, Expr* expr) {
+    // For now, only handle built-in functions by name
+    if (expr->call.callee->type == EXPR_VARIABLE) {
+        char* func_name = expr->call.callee->variable.name->lexeme;
         
-        // Read input line
-        if (!fgets(input, sizeof(input), stdin)) {
-            printf("\nGoodbye!\n");
-            break;
-        }
-        
-        // Remove trailing newline
-        size_t len = strlen(input);
-        if (len > 0 && input[len-1] == '\n') {
-            input[len-1] = '\0';
-        }
-        
-        // Check for exit commands
-        if (strcmp(input, "exit") == 0 || strcmp(input, "quit") == 0) {
-            printf("Goodbye!\n");
-            break;
-        }
-        
-        // Skip empty lines
-        if (strlen(input) == 0) {
-            continue;
-        }
-        
-        // Add semicolon if not present and not a control structure
-        len = strlen(input);
-        bool needs_semicolon = true;
-        if (len > 0) {
-            char last_char = input[len-1];
-            if (last_char == ';' || last_char == '{' || last_char == '}') {
-                needs_semicolon = false;
+        if (strcmp(func_name, "len") == 0) {
+            if (expr->call.arg_count != 1) {
+                printf("Runtime Error: len() expects exactly 1 argument.\n");
+                exit(1);
             }
-            // Check if it's a control structure
-            if (strstr(input, "if ") == input || 
-                strstr(input, "while ") == input || 
-                strstr(input, "for ") == input ||
-                strstr(input, "function ") == input) {
-                needs_semicolon = false;
+            
+            Value arg = evaluate_expr(interpreter, expr->call.arguments[0]);
+            Value result;
+            result.type = VALUE_NUMBER;
+            
+            if (arg.type == VALUE_STRING) {
+                result.value.number = strlen(arg.value.string);
+            } else if (arg.type == VALUE_LIST) {
+                result.value.number = arg.list_size;
+            } else {
+                printf("Runtime Error: len() expects a string or list argument.\n");
+                exit(1);
+            }
+            
+            return result;
+        } else {
+            // Check if it's a user-defined function
+            Value func_value = env_get(interpreter->environment, func_name);
+            if (func_value.type == VALUE_FUNCTION) {
+                // Call user-defined function
+                Stmt* func_stmt = func_value.value.function_stmt;
+                
+                // Check argument count
+                if (expr->call.arg_count != func_stmt->function.param_count) {
+                    printf("Runtime Error: Function '%s' expects %d arguments, got %d.\n",
+                           func_name, func_stmt->function.param_count, expr->call.arg_count);
+                    exit(1);
+                }
+                
+                // Create new environment for function scope
+                Environment* previous = interpreter->environment;
+                Environment* func_env = create_environment(interpreter->globals);
+                interpreter->environment = func_env;
+                
+                // Bind parameters to arguments
+                for (int i = 0; i < func_stmt->function.param_count; i++) {
+                    Value arg_value = evaluate_expr(interpreter, expr->call.arguments[i]);
+                    env_define(func_env, func_stmt->function.params[i]->lexeme, arg_value);
+                }
+                
+                // Execute function body and check for returns
+                interpreter->has_returned = false;
+                for (int i = 0; i < func_stmt->function.body_count; i++) {
+                    execute_stmt(interpreter, func_stmt->function.body[i]);
+                    if (interpreter->has_returned) {
+                        break;
+                    }
+                }
+                
+                // Get return value
+                Value result;
+                if (interpreter->has_returned) {
+                    result = interpreter->return_value;
+                } else {
+                    result.type = VALUE_NIL;
+                }
+                
+                // Restore previous environment
+                interpreter->environment = previous;
+                
+                return result;
+            } else {
+                printf("Runtime Error: Unknown function '%s'.\n", func_name);
+                exit(1);
             }
         }
-        
-        // Prepare command for execution
-        char command[1100];
-        if (needs_semicolon) {
-            snprintf(command, sizeof(command), "%s;", input);
-        } else {
-            strncpy(command, input, sizeof(command) - 1);
-            command[sizeof(command) - 1] = '\0';
+    }
+    
+    printf("Runtime Error: Can only call functions.\n");
+    exit(1);
+}
+
+Value evaluate_logical(Interpreter* interpreter, Expr* expr) {
+    Value left = evaluate_expr(interpreter, expr->logical.left);
+    
+    if (expr->logical.operator->type == MS_TOKEN_OR) {
+        if (is_truthy(left)) {
+            Value result;
+            result.type = VALUE_BOOL;
+            result.value.boolean = true;
+            return result;
         }
-        
-        // Execute the command
-        printf("=> ");
-        fflush(stdout);
-        
-        // Store current interpreter state in case of error
-        interpret(command, "<REPL>");
-        
-        line_number++;
-        printf("\n");
+    } else { // AND
+        if (!is_truthy(left)) {
+            Value result;
+            result.type = VALUE_BOOL;
+            result.value.boolean = false;
+            return result;
+        }
+    }
+    
+    Value right = evaluate_expr(interpreter, expr->logical.right);
+    Value result;
+    result.type = VALUE_BOOL;
+    result.value.boolean = is_truthy(right);
+    return result;
+}
+
+Value evaluate_grouping(Interpreter* interpreter, Expr* expr) {
+    return evaluate_expr(interpreter, expr->grouping.expression);
+}
+
+Value evaluate_list_literal(Interpreter* interpreter, Expr* expr) {
+    Value list_value;
+    list_value.type = VALUE_LIST;
+    list_value.list_size = expr->list_literal.element_count;
+    list_value.value.elements = malloc(sizeof(Expr*) * list_value.list_size);
+    
+    // Evaluate each element and store the result
+    for (int i = 0; i < list_value.list_size; i++) {
+        Value element_value = evaluate_expr(interpreter, expr->list_literal.elements[i]);
+        // For now, store as literal expressions - a more complete implementation
+        // would need a different storage approach for runtime values
+        Expr* literal_expr = malloc(sizeof(Expr));
+        literal_expr->type = EXPR_LITERAL;
+        literal_expr->literal.value = element_value;
+        list_value.value.elements[i] = literal_expr;
+    }
+    
+    return list_value;
+}
+
+Value evaluate_get(Interpreter* interpreter, Expr* expr) {
+    Value object = evaluate_expr(interpreter, expr->get.object);
+    
+    if (object.type != VALUE_LIST) {
+        printf("Runtime Error: Only lists can be indexed.\n");
+        exit(1);
+    }
+    
+    Value index_value = evaluate_expr(interpreter, expr->get.index);
+    if (index_value.type != VALUE_NUMBER) {
+        printf("Runtime Error: List index must be a number.\n");
+        exit(1);
+    }
+    
+    int index = (int)index_value.value.number;
+    if (index < 0 || index >= object.list_size) {
+        printf("Runtime Error: List index out of bounds.\n");
+        exit(1);
+    }
+    
+    // Return the value from the stored literal expression
+    return object.value.elements[index]->literal.value;
+}
+
+Value evaluate_set(Interpreter* interpreter, Expr* expr) {
+    Value object = evaluate_expr(interpreter, expr->set.object);
+    
+    if (object.type != VALUE_LIST) {
+        printf("Runtime Error: Only lists can be indexed for assignment.\n");
+        exit(1);
+    }
+    
+    Value index_value = evaluate_expr(interpreter, expr->set.index);
+    if (index_value.type != VALUE_NUMBER) {
+        printf("Runtime Error: List index must be a number.\n");
+        exit(1);
+    }
+    
+    int index = (int)index_value.value.number;
+    if (index < 0 || index >= object.list_size) {
+        printf("Runtime Error: List index out of bounds.\n");
+        exit(1);
+    }
+    
+    Value new_value = evaluate_expr(interpreter, expr->set.value);
+    
+    // Update the value in the list
+    Expr* literal_expr = malloc(sizeof(Expr));
+    literal_expr->type = EXPR_LITERAL;
+    literal_expr->literal.value = new_value;
+    object.value.elements[index] = literal_expr;
+    
+    return new_value;
+}
+
+Value evaluate_expr(Interpreter* interpreter, Expr* expr) {
+    switch (expr->type) {
+        case EXPR_LITERAL:
+            return evaluate_literal(interpreter, expr);
+        case EXPR_VARIABLE:
+            return evaluate_variable(interpreter, expr);
+        case EXPR_ASSIGN:
+            return evaluate_assign(interpreter, expr);
+        case EXPR_BINARY:
+            return evaluate_binary(interpreter, expr);
+        case EXPR_UNARY:
+            return evaluate_unary(interpreter, expr);
+        case EXPR_CALL:
+            return evaluate_call(interpreter, expr);
+        case EXPR_LOGICAL:
+            return evaluate_logical(interpreter, expr);
+        case EXPR_GROUPING:
+            return evaluate_grouping(interpreter, expr);
+        case EXPR_LIST_LITERAL:
+            return evaluate_list_literal(interpreter, expr);
+        case EXPR_GET:
+            return evaluate_get(interpreter, expr);
+        case EXPR_SET:
+            return evaluate_set(interpreter, expr);
+        default:
+            printf("Runtime Error: Unknown expression type.\n");
+            exit(1);
     }
 }
 
+void execute_expression_stmt(Interpreter* interpreter, Stmt* stmt) {
+    evaluate_expr(interpreter, stmt->expression.expression);
+}
 
+void execute_print_stmt(Interpreter* interpreter, Stmt* stmt) {
+    for (int i = 0; i < stmt->print.expr_count; i++) {
+        Value value = evaluate_expr(interpreter, stmt->print.expressions[i]);
+        printf("%s", value_to_string(value));
+        if (i < stmt->print.expr_count - 1) printf(" ");
+    }
+    printf("\n");
+}
 
-// Main function
-int main(int argc, char* argv[]) {
-    // Check command line arguments
-    if (argc < 2) {
-        // Start REPL mode when no script file is provided
-        run_repl();
-        return 0;
+void execute_var_stmt(Interpreter* interpreter, Stmt* stmt) {
+    Value value;
+    value.type = VALUE_NIL;
+    
+    if (stmt->var.initializer != NULL) {
+        value = evaluate_expr(interpreter, stmt->var.initializer);
     }
     
-    // Handle help arguments
-    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-        print_usage(argv[0]);
-        return 0;
+    env_define(interpreter->environment, stmt->var.name->lexeme, value);
+}
+
+void execute_assert_stmt(Interpreter* interpreter, Stmt* stmt) {
+    Value condition = evaluate_expr(interpreter, stmt->assert_stmt.condition);
+    
+    if (!is_truthy(condition)) {
+        Value message = evaluate_expr(interpreter, stmt->assert_stmt.message);
+        printf("Runtime Error: Assertion failed: %s\n", value_to_string(message));
+        exit(1);
+    }
+}
+
+void execute_if_stmt(Interpreter* interpreter, Stmt* stmt) {
+    Value condition = evaluate_expr(interpreter, stmt->if_stmt.condition);
+    
+    if (is_truthy(condition)) {
+        execute_stmt(interpreter, stmt->if_stmt.then_branch);
+    } else if (stmt->if_stmt.else_branch != NULL) {
+        execute_stmt(interpreter, stmt->if_stmt.else_branch);
+    }
+}
+
+void execute_while_stmt(Interpreter* interpreter, Stmt* stmt) {
+    while (true) {
+        Value condition = evaluate_expr(interpreter, stmt->while_stmt.condition);
+        if (!is_truthy(condition)) break;
+        execute_stmt(interpreter, stmt->while_stmt.body);
+    }
+}
+
+void execute_for_stmt(Interpreter* interpreter, Stmt* stmt) {
+    // Create new scope for the for loop
+    Environment* previous = interpreter->environment;
+    Environment* for_env = create_environment(previous);
+    interpreter->environment = for_env;
+    
+    // Execute initializer
+    if (stmt->for_stmt.initializer != NULL) {
+        execute_stmt(interpreter, stmt->for_stmt.initializer);
     }
     
-    // Read and execute script file
-    char* script_content = read_file(argv[1]);
-    if (!script_content) {
-        return 1;
+    // Loop with condition and increment
+    while (true) {
+        // Check condition
+        Value condition = evaluate_expr(interpreter, stmt->for_stmt.condition);
+        if (!is_truthy(condition)) break;
+        
+        // Execute body
+        execute_stmt(interpreter, stmt->for_stmt.body);
+        
+        // Execute increment
+        if (stmt->for_stmt.increment != NULL) {
+            evaluate_expr(interpreter, stmt->for_stmt.increment);
+        }
     }
     
+    // Restore previous scope
+    interpreter->environment = previous;
+}
+
+void execute_function_stmt(Interpreter* interpreter, Stmt* stmt) {
+    // Store function definition in environment as a special VALUE_FUNCTION
+    Value func_value;
+    func_value.type = VALUE_FUNCTION;
+    // For simplicity, we'll store the function statement itself in the value
+    // This is a hack for a basic implementation
+    func_value.value.function_stmt = stmt;
+    
+    env_define(interpreter->environment, stmt->function.name->lexeme, func_value);
+}
+
+void execute_return_stmt(Interpreter* interpreter, Stmt* stmt) {
+    if (stmt->return_stmt.value != NULL) {
+        interpreter->return_value = evaluate_expr(interpreter, stmt->return_stmt.value);
+    } else {
+        interpreter->return_value.type = VALUE_NIL;
+    }
+    interpreter->has_returned = true;
+}
+
+void execute_block_stmt(Interpreter* interpreter, Stmt* stmt) {
+    Environment* previous = interpreter->environment;
+    Environment* block_env = create_environment(previous);
+    interpreter->environment = block_env;
+    
+    for (int i = 0; i < stmt->block.stmt_count; i++) {
+        execute_stmt(interpreter, stmt->block.statements[i]);
+    }
+    
+    interpreter->environment = previous;
+    // Note: In a production implementation, we'd want to free block_env
+}
+
+void execute_stmt(Interpreter* interpreter, Stmt* stmt) {
+    switch (stmt->type) {
+        case STMT_EXPRESSION:
+            execute_expression_stmt(interpreter, stmt);
+            break;
+        case STMT_PRINT:
+            execute_print_stmt(interpreter, stmt);
+            break;
+        case STMT_VAR:
+            execute_var_stmt(interpreter, stmt);
+            break;
+        case STMT_ASSERT:
+            execute_assert_stmt(interpreter, stmt);
+            break;
+        case STMT_IF:
+            execute_if_stmt(interpreter, stmt);
+            break;
+        case STMT_BLOCK:
+            execute_block_stmt(interpreter, stmt);
+            break;
+        case STMT_WHILE:
+            execute_while_stmt(interpreter, stmt);
+            break;
+        case STMT_FOR:
+            execute_for_stmt(interpreter, stmt);
+            break;
+        case STMT_FUNCTION:
+            execute_function_stmt(interpreter, stmt);
+            break;
+        case STMT_RETURN:
+            execute_return_stmt(interpreter, stmt);
+            break;
+        default:
+            printf("Runtime Error: Unknown statement type.\n");
+            exit(1);
+    }
+}
+
+Interpreter* create_interpreter(char* filename) {
+    Interpreter* interpreter = malloc(sizeof(Interpreter));
+    interpreter->globals = create_environment(NULL);
+    interpreter->environment = interpreter->globals;
+    interpreter->filename = filename;
+    interpreter->builtins = NULL;
+    interpreter->builtin_count = 0;
+    interpreter->has_returned = false;
+    interpreter->return_value.type = VALUE_NIL;
+    return interpreter;
+}
+
+void interpret(Interpreter* interpreter, Stmt** statements) {
+    for (int i = 0; statements[i] != NULL; i++) {
+        execute_stmt(interpreter, statements[i]);
+    }
+}
+
+// =============================================================================
+// MAIN FUNCTION
+// =============================================================================
+
+void run(char* source, char* filename) {
+    Lexer* lexer = create_lexer(source, filename);
+    Token* tokens = scan_tokens(lexer);
+    
+    Parser* parser = create_parser(tokens, lexer->token_count, filename);
+    Stmt** statements = parse(parser);
+    
+    Interpreter* interpreter = create_interpreter(filename);
+    interpret(interpreter, statements);
+}
+
+void run_file(char* path) {
     printf("Mini Script Language Interpreter\n");
     printf("=================================\n");
-
-    // Create a display path that's relative to the tests directory
-    char display_path_buf[1024];
-    strncpy(display_path_buf, argv[1], sizeof(display_path_buf) - 1);
-    display_path_buf[sizeof(display_path_buf) - 1] = '\0';
-
-    // Normalize path separators for consistency
-    for (char* p = display_path_buf; *p; ++p) {
-        if (*p == '\\') {
-            *p = '/';
-        }
+    
+    // Create display path
+    char display_path[1024];
+    strcpy(display_path, path);
+    
+    // Normalize path separators
+    for (char* p = display_path; *p; p++) {
+        if (*p == '\\') *p = '/';
     }
-
-    char* display_path = display_path_buf;
+    
+    // Find tests/ marker for relative display
     char* tests_marker = strstr(display_path, "tests/");
     if (tests_marker != NULL) {
-        display_path = tests_marker;
+        strcpy(display_path, tests_marker);
     }
-
+    
     printf("Executing: %s\n", display_path);
     printf("---------------------------------\n\n");
     
-    // Execute the script
-    interpret(script_content, argv[1]);
+    char* source = read_file(path);
+    if (source == NULL) {
+        exit(1);
+    }
     
-    // Clean up
-    free(script_content);
+    run(source, path);
+    free(source);
+}
+
+void run_prompt() {
+    printf("Mini Script REPL (type 'exit' to quit)\n");
+    char line[1024];
+    
+    while (true) {
+        printf("> ");
+        if (fgets(line, sizeof(line), stdin) == NULL) break;
+        
+        // Remove newline
+        line[strcspn(line, "\n")] = 0;
+        
+        if (strcmp(line, "exit") == 0) break;
+        
+        run(line, "<REPL>");
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc > 2) {
+        printf("Usage: mini_script [script]\n");
+        return 64;
+    } else if (argc == 2) {
+        run_file(argv[1]);
+    } else {
+        run_prompt();
+    }
     
     return 0;
 }
