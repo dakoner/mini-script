@@ -1,0 +1,21 @@
+Mini Script Language Interpreter
+=================================
+Executing: tests/test_18_time_operations.ms
+---------------------------------
+
+=== Test 18: Time Operations ===
+Test 1: Getting current time
+Current timestamp: 1756616945
+Test 2: Formatting current time
+Date: 2025-08-30
+DateTime: 2025-08-30 22:09:05
+Time: 22:09:05
+Test 3: Extracting time components
+Year: 2025
+Month: 8
+Day: 30
+Hour: 22
+Minute: 9
+Second: 5
+Weekday: 5 (0=Sunday, 1=Monday, etc.)
+Test 4: Time parsing

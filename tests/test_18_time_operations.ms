@@ -1,10 +1,12 @@
 // Test 18: Time Operations
 print("=== Test 18: Time Operations ===");
 
-// Test 1: Get current time
-print("Test 1: Getting current time");
-now = time_now();
-print("Current timestamp:", now);
+// Test 1: Use a fixed time for determinism
+print("Test 1: Using a fixed time for determinism");
+fixed_time_str = "2025-08-30 12:00:00";
+now = time_parse(fixed_time_str, "%Y-%m-%d %H:%M:%S");
+print("Using fixed time:", fixed_time_str);
+print("Fixed timestamp:", now);
 
 // Test 2: Format current time
 print("Test 2: Formatting current time");
