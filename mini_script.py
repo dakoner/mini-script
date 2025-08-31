@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 from enum import Enum, auto
+from abc import ABC, abstractmethod
 
 
 # =============================================================================
@@ -27,8 +28,8 @@ class TokenType(Enum):
     IDENTIFIER, STRING, NUMBER, CHAR = auto(), auto(), auto(), auto()
 
     # Keywords.
-    ELSE, FALSE, FOR, FUNCTION, IF, RETURN, TRUE, WHILE, IMPORT = (
-        auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto())
+    PRINT, ELSE, FALSE, FOR, FUNCTION, IF, RETURN, TRUE, WHILE, IMPORT, FROM = (
+        auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto(), auto())
     INT_TYPE, FLOAT_TYPE, CHAR_TYPE, STRING_TYPE, LIST, MAP = (
         auto(), auto(), auto(), auto(), auto(), auto())
     LOADLIB, GETPROC, FREELIB, CALLEXT = auto(), auto(), auto(), auto()
@@ -38,6 +39,7 @@ class TokenType(Enum):
 
 
 KEYWORDS = {
+    "print":    TokenType.PRINT,
     "if":       TokenType.IF,
     "else":     TokenType.ELSE,
     "while":    TokenType.WHILE,
@@ -47,6 +49,7 @@ KEYWORDS = {
     "true":     TokenType.TRUE,
     "false":    TokenType.FALSE,
     "import":   TokenType.IMPORT,
+    "from":     TokenType.FROM,
     "int":      TokenType.INT_TYPE,
     "float":    TokenType.FLOAT_TYPE,
     "char":     TokenType.CHAR_TYPE,
@@ -190,7 +193,7 @@ class Lexer:
             self.add_token(TokenType.SEMICOLON)
         elif c == '*':
             self.add_token(TokenType.MULTIPLY)
-        elif c == '!:
+        elif c == '!':
             self.add_token(
                 TokenType.NOT_EQUAL if self.match('=') else TokenType.NOT)
         elif c == '=':
@@ -248,7 +251,7 @@ class Lexer:
 class Stmt:
     class Visitor:
         def visit_block_stmt(self, stmt): raise NotImplementedError
-        def visit_expressionstmt_stmt(self, stmt): raise NotImplementedError
+        def visit_expression_stmt(self, stmt): raise NotImplementedError
         def visit_function_stmt(self, stmt): raise NotImplementedError
         def visit_if_stmt(self, stmt): raise NotImplementedError
         def visit_return_stmt(self, stmt): raise NotImplementedError
@@ -256,6 +259,7 @@ class Stmt:
         def visit_import_stmt(self, stmt): raise NotImplementedError
         def visit_assert_stmt(self, stmt): raise NotImplementedError
         def visit_var_stmt(self, stmt): raise NotImplementedError
+        def visit_print_stmt(self, stmt): raise NotImplementedError
 
     def accept(self, visitor):
         method_name = f'visit_{self.__class__.__name__.lower()}_stmt'
@@ -273,8 +277,8 @@ class Expr:
         def visit_unary_expr(self, expr): raise NotImplementedError
         def visit_variable_expr(self, expr): raise NotImplementedError
         def visit_listliteral_expr(self, expr): raise NotImplementedError
-        def visit_indexget_expr(self, expr): raise NotImplementedError
-        def visit_indexset_expr(self, expr): raise NotImplementedError
+        def visit_get_expr(self, expr): raise NotImplementedError
+        def visit_set_expr(self, expr): raise NotImplementedError
 
     def accept(self, visitor):
         method_name = f'visit_{self.__class__.__name__.lower()}_expr'
@@ -316,16 +320,14 @@ class ListLiteral(Expr):
     def __init__(self, elements):
         self.elements = elements
 
-class IndexGet(Expr):
-    def __init__(self, object, bracket, index):
+class Get(Expr):
+    def __init__(self, object, index):
         self.object = object
-        self.bracket = bracket
         self.index = index
 
-class IndexSet(Expr):
-    def __init__(self, object, bracket, index, value):
+class Set(Expr):
+    def __init__(self, object, index, value):
         self.object = object
-        self.bracket = bracket
         self.index = index
         self.value = value
 
@@ -357,6 +359,11 @@ class Block(Stmt):
 class ExpressionStmt(Stmt):
     def __init__(self, expression):
         self.expression = expression
+
+
+class Print(Stmt):
+    def __init__(self, expressions):
+        self.expressions = expressions
 
 
 class Function(Stmt):
@@ -460,7 +467,7 @@ class Parser:
     def consume(self, type, message):
         if self.check(type):
             return self.advance()
-        raise ParseError()
+        raise self.error(self.peek(), message)
 
     def synchronize(self):
         self.advance()
@@ -510,6 +517,8 @@ class Parser:
         return Function(name, params, body)
 
     def statement(self):
+        if self.match(TokenType.PRINT):
+            return self.print_statement()
         if self.match(TokenType.ASSERT):
             return self.assert_statement()
         if self.match(TokenType.IMPORT):
@@ -527,6 +536,15 @@ class Parser:
 
         return self.expression_statement()
 
+    def print_statement(self):
+        # This is a deviation from the book, but MiniScript uses print as a statement
+        # and allows multiple comma-separated expressions.
+        values = [self.expression()]
+        while self.match(TokenType.COMMA):
+            values.append(self.expression())
+        self.consume(TokenType.SEMICOLON, "Expect ';' after value.")
+        return Print(values)
+
     def assert_statement(self):
         keyword = self.previous()
         condition = self.expression()
@@ -537,9 +555,10 @@ class Parser:
 
     def import_statement(self):
         namespace = None
-        if (self.check(TokenType.IDENTIFIER) and
-            self.peek_next().type in (TokenType.COMMA, TokenType.SEMICOLON)):
+        if self.check(TokenType.IDENTIFIER) and self.peek_next().type == TokenType.FROM:
             namespace = self.consume(TokenType.IDENTIFIER, "Expect namespace for import.")
+            self.consume(TokenType.FROM, "Expect 'from' after namespace.")
+        
         path_token = self.consume(TokenType.STRING, "Expect string path for import.")
         self.consume(TokenType.SEMICOLON, "Expect ';' after import statement.")
         return Import(path_token, namespace)
@@ -569,11 +588,12 @@ class Parser:
 
         # For loop variable
         initializer = None
-        if self.match(TokenType.VAR):
+        if self.match(TokenType.SEMICOLON):
+            initializer = None # No initializer
+        elif self.match(TokenType.VAR):
             initializer = self.var_declaration()
-        elif not self.check(TokenType.SEMICOLON):
+        else:
             initializer = self.expression_statement()
-        self.consume(TokenType.SEMICOLON, "Expect ';' after initializer.")
 
         # For loop condition
         condition = None
@@ -636,6 +656,8 @@ class Parser:
             if isinstance(expr, Variable):
                 name = expr.name
                 return Assign(name, value)
+            elif isinstance(expr, Get):
+                return Set(expr.object, expr.index, value)
 
             self.error(equals, "Invalid assignment target.")
 
@@ -702,19 +724,26 @@ class Parser:
         expr = self.primary()
         while True:
             if self.match(TokenType.LPAREN):
-                arguments = []
-                if not self.check(TokenType.RPAREN):
-                    while True:
-                        if len(arguments) >= 255:
-                            self.error(self.peek(), "Can't have more than 255 arguments.")
-                        arguments.append(self.expression())
-                        if not self.match(TokenType.COMMA):
-                            break
-                paren = self.consume(TokenType.RPAREN, "Expect ')' after arguments.")
-                expr = Call(expr, paren, arguments)
+                expr = self.finish_call(expr)
+            elif self.match(TokenType.LBRACKET):
+                index = self.expression()
+                self.consume(TokenType.RBRACKET, "Expect ']' after index.")
+                expr = Get(expr, index)
             else:
                 break
         return expr
+
+    def finish_call(self, callee):
+        arguments = []
+        if not self.check(TokenType.RPAREN):
+            while True:
+                if len(arguments) >= 255:
+                    self.error(self.peek(), "Can't have more than 255 arguments.")
+                arguments.append(self.expression())
+                if not self.match(TokenType.COMMA):
+                    break
+        paren = self.consume(TokenType.RPAREN, "Expect ')' after arguments.")
+        return Call(callee, paren, arguments)
 
     def primary(self):
         if self.match(TokenType.NUMBER, TokenType.FALSE, TokenType.TRUE, TokenType.NIL):
@@ -745,11 +774,6 @@ class Parser:
 
         raise self.error(self.peek(), "Expect expression.")
 
-    def consume(self, type, message):
-        if self.check(type):
-            return self.advance()
-        raise ParseError()
-
     def error(self, token, message):
         if token.type == TokenType.EOF:
             print(f"Parse Error at end: {message}", file=sys.stdout)
@@ -757,24 +781,15 @@ class Parser:
             print(f"Parse Error at '{token.lexeme}': {message}", file=sys.stdout)
         return ParseError()
 
-    def synchronize(self):
-        self.advance()
-        while not self.is_at_end():
-            if self.previous().type == TokenType.SEMICOLON:
-                return
-            if self.peek().type in (TokenType.FUNCTION, TokenType.WHILE, TokenType.FOR,
-                                     TokenType.IF, TokenType.RETURN, TokenType.PRINT):
-                return
-            self.advance()
-
-
 # =============================================================================
 # 4. BUILT-IN FUNCTIONS
 # =============================================================================
 
-class MiniScriptCallable:
+class MiniScriptCallable(ABC):
+    @abstractmethod
     def arity(self):
         raise NotImplementedError()
+    @abstractmethod
     def call(self, interpreter, arguments):
         raise NotImplementedError()
 
@@ -836,7 +851,103 @@ class BuiltinTimeParse(MiniScriptCallable):
             dt = datetime.strptime(time_str, fmt)
             return time.mktime(dt.timetuple())
         except ValueError:
-            return -1 # Return -1 on parsing failure as per spec
+            return None # Return nil on parsing failure
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeYear(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_year() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_year
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeMonth(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_month() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_mon
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeDay(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_day() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_mday
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeHour(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_hour() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_hour
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeMinute(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_minute() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_min
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeSecond(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_second() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_sec
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeWeekday(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        timestamp = arguments[0]
+        if not isinstance(timestamp, (int, float)):
+            raise RuntimeError(None, "time_weekday() expects a numeric timestamp.")
+        return time.localtime(timestamp).tm_wday
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinTimeAdd(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        timestamp, seconds = arguments
+        if not isinstance(timestamp, (int, float)) or not isinstance(seconds, (int, float)):
+            raise RuntimeError(None, "time_add() expects two numeric arguments.")
+        return timestamp + seconds
     def __str__(self):
         return "<native fn>"
 
@@ -860,6 +971,111 @@ class BuiltinSleep(MiniScriptCallable):
             raise RuntimeError(None, "sleep() expects a numeric duration in seconds.")
         time.sleep(duration)
         return None
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFOpen(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        filename, mode = arguments
+        if not isinstance(filename, str) or not isinstance(mode, str):
+            raise RuntimeError(None, "fopen() expects two string arguments.")
+        try:
+            file_handle = open(filename, mode, encoding='utf-8')
+            return file_handle
+        except IOError:
+            return None
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFClose(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        file_handle = arguments[0]
+        try:
+            file_handle.close()
+            return 0
+        except:
+            return -1
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFWrite(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        file_handle, content = arguments
+        if not isinstance(content, str):
+            content = interpreter.stringify(content)
+        try:
+            bytes_written = file_handle.write(content)
+            file_handle.flush()
+            return bytes_written
+        except:
+            return -1
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFRead(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        file_handle = arguments[0]
+        try:
+            return file_handle.read()
+        except:
+            return None
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFReadLine(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        file_handle = arguments[0]
+        try:
+            line = file_handle.readline()
+            if line.endswith('\n'):
+                line = line[:-1]
+            return line if line else None
+        except:
+            return None
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFWriteLine(MiniScriptCallable):
+    def arity(self):
+        return 2
+    def call(self, interpreter, arguments):
+        file_handle, line = arguments
+        if not isinstance(line, str):
+            line = interpreter.stringify(line)
+        try:
+            bytes_written = file_handle.write(line + '\n')
+            file_handle.flush()
+            return bytes_written
+        except:
+            return -1
+    def __str__(self):
+        return "<native fn>"
+
+
+class BuiltinFExists(MiniScriptCallable):
+    def arity(self):
+        return 1
+    def call(self, interpreter, arguments):
+        filename = arguments[0]
+        if not isinstance(filename, str):
+            raise RuntimeError(None, "fexists() expects a string argument.")
+        return os.path.exists(filename) and os.path.isfile(filename)
     def __str__(self):
         return "<native fn>"
 
@@ -940,21 +1156,32 @@ class MiniScriptFunction(MiniScriptCallable):
 
 
 class Interpreter(Expr.Visitor, Stmt.Visitor):
-    def __init__(self, filename="<unknown>"):
-        self.filename = filename
+    def __init__(self, filename="<stdin>"):
         self.globals = Environment()
         self.environment = self.globals
-        self.locals = {}
-        self.modules_path = [os.getcwd()]  # Start with current directory
-
-        # Built-in functions
+        self.filename = filename
         self.globals.define("print", BuiltinPrint())
         self.globals.define("len", BuiltinLen())
         self.globals.define("time_now", BuiltinTimeNow())
         self.globals.define("time_format", BuiltinTimeFormat())
         self.globals.define("time_parse", BuiltinTimeParse())
         self.globals.define("time_diff", BuiltinTimeDiff())
+        self.globals.define("time_year", BuiltinTimeYear())
+        self.globals.define("time_month", BuiltinTimeMonth())
+        self.globals.define("time_day", BuiltinTimeDay())
+        self.globals.define("time_hour", BuiltinTimeHour())
+        self.globals.define("time_minute", BuiltinTimeMinute())
+        self.globals.define("time_second", BuiltinTimeSecond())
+        self.globals.define("time_weekday", BuiltinTimeWeekday())
+        self.globals.define("time_add", BuiltinTimeAdd())
         self.globals.define("sleep", BuiltinSleep())
+        self.globals.define("fopen", BuiltinFOpen())
+        self.globals.define("fclose", BuiltinFClose())
+        self.globals.define("fwrite", BuiltinFWrite())
+        self.globals.define("fread", BuiltinFRead())
+        self.globals.define("freadline", BuiltinFReadLine())
+        self.globals.define("fwriteline", BuiltinFWriteLine())
+        self.globals.define("fexists", BuiltinFExists())
 
     def interpret(self, statements):
         try:
@@ -964,6 +1191,7 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
             # The batch script expects errors on stdout
             print(f"Error in {self.filename} at line {error.token.line if error.token else 'unknown'}: {error.message}",
                   file=sys.stdout)
+            sys.exit(1)
 
     def execute(self, stmt):
         stmt.accept(self)
@@ -988,6 +1216,12 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
 
     def visit_expressionstmt_stmt(self, stmt):
         self.evaluate(stmt.expression)
+        return None
+
+    def visit_print_stmt(self, stmt):
+        values = [self.evaluate(v) for v in stmt.expressions]
+        print(*[self.stringify(v) for v in values])
+        return None
 
     def visit_function_stmt(self, stmt):
         function = MiniScriptFunction(stmt, self.environment)
@@ -1010,8 +1244,8 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
             self.execute(stmt.body)
 
     def visit_assert_stmt(self, stmt):
-        condition_val = self.evaluate(stmt.condition)
-        if not self.is_truthy(condition_val):
+        condition = self.evaluate(stmt.condition)
+        if not self.is_truthy(condition):
             message_val = self.evaluate(stmt.message)
             raise RuntimeError(
                 stmt.keyword,
@@ -1068,38 +1302,31 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         return expr.value
 
     def visit_listliteral_expr(self, expr):
-        elements = [self.evaluate(elem) for elem in expr.elements]
-        return elements
+        return [self.evaluate(elem) for elem in expr.elements]
 
-    def visit_indexget_expr(self, expr):
+    def visit_get_expr(self, expr):
         obj = self.evaluate(expr.object)
-        index = self.evaluate(expr.index)
+        if isinstance(obj, list):
+            index = self.evaluate(expr.index)
+            if isinstance(index, int):
+                if 0 <= index < len(obj):
+                    return obj[index]
+                raise RuntimeError(None, "List index out of range.")
+            raise RuntimeError(None, "List index must be an integer.")
+        raise RuntimeError(None, "Can only index lists.")
 
-        if not isinstance(obj, list):
-            self.error(expr.bracket, "Can only index lists.")
-        if not isinstance(index, int):
-            self.error(expr.bracket, "List index must be an integer.")
-        
-        if not 0 <= index < len(obj):
-            self.error(expr.bracket, f"Index {index} out of bounds for list of size {len(obj)}.")
-
-        return obj[index]
-
-    def visit_indexset_expr(self, expr):
+    def visit_set_expr(self, expr):
         obj = self.evaluate(expr.object)
-        index = self.evaluate(expr.index)
-        value = self.evaluate(expr.value)
-
-        if not isinstance(obj, list):
-            self.error(expr.bracket, "Can only index lists.")
-        if not isinstance(index, int):
-            self.error(expr.bracket, "List index must be an integer.")
-        
-        if not 0 <= index < len(obj):
-            self.error(expr.bracket, f"Index {index} out of bounds for list of size {len(obj)}.")
-
-        obj[index] = value
-        return value
+        if isinstance(obj, list):
+            index = self.evaluate(expr.index)
+            if isinstance(index, int):
+                if 0 <= index < len(obj):
+                    value = self.evaluate(expr.value)
+                    obj[index] = value
+                    return value
+                raise RuntimeError(None, "List index out of range.")
+            raise RuntimeError(None, "List index must be an integer.")
+        raise RuntimeError(None, "Can only set elements of lists.")
 
     def visit_variable_expr(self, expr):
         return self.environment.get(expr.name)
@@ -1155,7 +1382,7 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         if op_type == TokenType.DIVIDE:
             self.check_number_operands(expr.operator, left, right)
             if float(right) == 0:
-                self.error(expr.operator, "Division by zero.")
+                raise RuntimeError(expr.operator, "Division by zero.")
             return float(left) / float(right)
 
         # Comparison
@@ -1185,10 +1412,10 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
         arguments = [self.evaluate(arg) for arg in expr.arguments]
 
         if not isinstance(callee, MiniScriptCallable):
-            self.error(expr.paren, "Can only call functions and classes.")
+            raise RuntimeError(expr.paren, "Can only call functions and classes.")
 
         if callee.arity() != -1 and len(arguments) != callee.arity():
-            self.error(
+            raise RuntimeError(
                 expr.paren,
                 f"Expected {callee.arity()} args but got {len(arguments)}.")
 
@@ -1217,12 +1444,12 @@ class Interpreter(Expr.Visitor, Stmt.Visitor):
     def check_number_operand(self, operator, operand):
         if isinstance(operand, (int, float)):
             return
-        self.error(operator, "Operand must be a number.")
+        raise RuntimeError(operator, "Operand must be a number.")
 
     def check_number_operands(self, operator, left, right):
         if isinstance(left, (int, float)) and isinstance(right, (int, float)):
             return
-        self.error(operator, "Operands must be numbers.")
+        raise RuntimeError(operator, "Operands must be numbers.")
 
     def error(self, token, message):
         raise RuntimeError(token, message)
@@ -1263,7 +1490,7 @@ def run(source, filename, interpreter_instance=None):
     if any(s is None for s in statements):
         # Errors already printed by parser
         interpreter_instance.filename = original_filename # Restore filename
-        return
+        sys.exit(1)
 
     interpreter_instance.interpret(statements)
     
@@ -1298,62 +1525,21 @@ def run_file(path, interpreter_instance=None):
             source = f.read()
         run(source, abs_path, interpreter_instance)
     except FileNotFoundError:
-        # The batch script expects errors on stdout
-        print(f"Error: Could not open file '{path}'", file=sys.stdout)
-        if is_main_run:
-            sys.exit(1)
-    except RuntimeError:
-        # Runtime errors are already printed by the interpreter
-        if is_main_run:
-            sys.exit(1)
+        print(f"Error: File not found at {path}", file=sys.stdout)
+        sys.exit(1)
 
 
-def run_repl():
-    """Starts an interactive Read-Eval-Print Loop."""
-    global main_interpreter
-    main_interpreter = Interpreter("<REPL>")
-
-    print("Mini Script Language (Python Version) - REPL")
-    print("Enter 'exit' to quit.")
-    line_num = 1
+def run_prompt():
+    """Runs the interpreter in a REPL mode."""
+    print("Mini Script REPL (type 'exit' to quit)")
+    interpreter = Interpreter("<REPL>")
     while True:
         try:
-            line = input(f"ms[{line_num}]> ")
-            if line.lower() in ['exit', 'quit']:
-                print("Goodbye!")
+            line = input("> ")
+            if line.lower() == 'exit':
                 break
-            if not line:
-                continue
-
-            # In REPL, we can treat everything as an expression and print
-            # the result, or handle statements gracefully. This is a
-            # simple version.
-            try:
-                # Try parsing as a statement
-                source = line
-                if not source.strip().endswith((';', '{', '}')):
-                    source += ';'
-
-                lexer = Lexer(source, "<REPL>")
-                tokens = lexer.scan_tokens()
-                parser = Parser(tokens, "<REPL>")
-                stmt = parser.declaration()
-
-                # If it's an expression statement, evaluate and print
-                if isinstance(stmt, ExpressionStmt):
-                    result = main_interpreter.evaluate(stmt.expression)
-                    if result is not None:
-                        print(f"=> {main_interpreter.stringify(result)}")
-                elif stmt:  # It's another kind of statement
-                    main_interpreter.execute(stmt)
-
-            except (ParseError, RuntimeError):
-                # Errors are already printed, just continue
-                pass
-
-            line_num += 1
+            run(line, "<REPL>", interpreter)
         except EOFError:
-            print("\nGoodbye!")
             break
         except Exception as e:
             print(f"An unexpected error occurred: {e}", file=sys.stdout)
@@ -1361,12 +1547,12 @@ def run_repl():
 
 def main():
     if len(sys.argv) > 2:
-        print("Usage: mini-script.py [script_file]")
-        sys.exit(1)
+        print("Usage: mini_script.py [script]")
+        sys.exit(64)
     elif len(sys.argv) == 2:
         run_file(sys.argv[1])
     else:
-        run_repl()
+        run_prompt()
 
 
 if __name__ == "__main__":

@@ -21,8 +21,8 @@ assert time_day(now) == 30, "Day extraction check";
 assert time_hour(now) == 12, "Hour extraction check";
 assert time_minute(now) == 30, "Minute extraction check";
 assert time_second(now) == 45, "Second extraction check";
-// Assuming 2025-08-30 is a Saturday (weekday 6)
-assert time_weekday(now) == 6, "Weekday extraction check";
+// Assuming 2025-08-30 is a Saturday (weekday 5 in Python's tm_wday where Monday=0)
+assert time_weekday(now) == 5, "Weekday extraction check";
 
 // Test 4: Time parsing (basic format)
 var test_date = "2026-12-25";
@@ -46,6 +46,6 @@ assert time_diff(future_day, now) == 86400, "One day difference check";
 
 // Test 7: Invalid parsing
 var invalid_time = time_parse("not a date", "%Y-%m-%d");
-assert invalid_time == null, "Parsing an invalid date should return null";
+assert invalid_time == nil, "Parsing an invalid date should return nil";
 
 print("Test 18: PASSED");

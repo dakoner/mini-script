@@ -12,7 +12,7 @@ This is line 3.";
 
 // Test 1: Create a test file and write to it
 var handle = fopen(test_filename, "w");
-assert handle != null, "File handle for write should be valid";
+assert handle != nil, "File handle for write should be valid";
 var bytes_written = fwrite(handle, test_content);
 // The exact number of bytes can vary with line endings, so we check it's greater than a minimum.
 assert bytes_written > 30, "Bytes written should be greater than 30";
@@ -24,7 +24,7 @@ assert fexists(test_filename) == true, "File should exist after writing";
 
 // Test 3: Read the entire file
 handle = fopen(test_filename, "r");
-assert handle != null, "File handle for read should be valid";
+assert handle != nil, "File handle for read should be valid";
 var content = fread(handle);
 assert content == test_content, "Read content should match written content";
 fclose(handle);
@@ -40,7 +40,7 @@ fclose(handle);
 var append_content = "
 This is an appended line.";
 handle = fopen(test_filename, "a");
-assert handle != null, "File handle for append should be valid";
+assert handle != nil, "File handle for append should be valid";
 fwrite(handle, append_content);
 fclose(handle);
 
@@ -67,7 +67,7 @@ fclose(handle);
 // Test 7: Error handling
 assert fexists("non_existent_file.txt") == false, "Non-existent file should not exist";
 var bad_handle = fopen("non_existent_file.txt", "r");
-assert bad_handle == null, "Opening a non-existent file for reading should return null";
+assert bad_handle == nil, "Opening a non-existent file for reading should return nil";
 
 print("Test 17: PASSED");
 print("");

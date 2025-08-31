@@ -7,52 +7,52 @@ function now() {
     return time_now();
 }
 
-function format(int timestamp, string fmt) {
+function format(timestamp, fmt) {
     return time_format(timestamp, fmt);
 }
 
-function parse(string date_string, string fmt) {
+function parse(date_string, fmt) {
     return time_parse(date_string, fmt);
 }
 
-function year(int timestamp) {
+function year(timestamp) {
     return time_year(timestamp);
 }
 
-function month(int timestamp) {
+function month(timestamp) {
     return time_month(timestamp);
 }
 
-function day(int timestamp) {
+function day(timestamp) {
     return time_day(timestamp);
 }
 
-function hour(int timestamp) {
+function hour(timestamp) {
     return time_hour(timestamp);
 }
 
-function minute(int timestamp) {
+function minute(timestamp) {
     return time_minute(timestamp);
 }
 
-function second(int timestamp) {
+function second(timestamp) {
     return time_second(timestamp);
 }
 
-function weekday(int timestamp) {
+function weekday(timestamp) {
     return time_weekday(timestamp);
 }
 
-function add(int timestamp, int seconds) {
+function add(timestamp, seconds) {
     return time_add(timestamp, seconds);
 }
 
-function diff(int timestamp1, int timestamp2) {
+function diff(timestamp1, timestamp2) {
     return time_diff(timestamp1, timestamp2);
 }
 
 // Module metadata
-version = "2.0";
-name = "TimeLibrary";
+version = "1.1";
+name = "Time Library";
 
 print("Time library v2.0 loaded with namespace support!");

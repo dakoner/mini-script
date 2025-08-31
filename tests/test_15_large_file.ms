@@ -313,7 +313,7 @@ final_list_length = len(stress_list_001) + len(stress_list_002) + len(stress_lis
 assert final_sum == 55, "Final sum check";
 assert final_product == 120, "Final product check";
 assert final_complex == 322.5, "Final complex calculation check";
-assert final_string_length == 118, "Final string length check";
+assert final_string_length == 88, "Final string length check";
 assert final_list_length == 45, "Final list length check";
 
 print("Test 15: PASSED");

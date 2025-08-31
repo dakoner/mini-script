@@ -1,19 +1,19 @@
 // math_utils.ms - A simple math utilities module
 
-function add(int a, int b) {
+function add(a, b) {
     return a + b;
 }
 
-function multiply(int a, int b) {
+function multiply(a, b) {
     return a * b;
 }
 
-function square(int x) {
+function square(x) {
     return x * x;
 }
 
 // Set some module variables
-module_version = 1;
-module_name = "MathUtils";
+module_version = "1.0";
+module_name = "Math Utilities";
 
 print("Math utilities module loaded!");
