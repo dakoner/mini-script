@@ -5,6 +5,7 @@ pub struct RuntimeError {
     pub message: String,
     pub line: Option<usize>,
     pub filename: String,
+    pub return_value: Option<crate::interpreter::Value>,
 }
 
 impl RuntimeError {
@@ -13,6 +14,16 @@ impl RuntimeError {
             message,
             line,
             filename: filename.to_string(),
+            return_value: None,
+        }
+    }
+    
+    pub fn with_return_value(message: String, line: Option<usize>, filename: &str, return_value: crate::interpreter::Value) -> Self {
+        Self {
+            message,
+            line,
+            filename: filename.to_string(),
+            return_value: Some(return_value),
         }
     }
 }

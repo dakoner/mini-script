@@ -26,6 +26,7 @@ impl PartialEq for Value {
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
+            (Value::FileHandle(_), Value::FileHandle(_)) => false, // File handles are never equal
             _ => false,
         }
     }
@@ -73,10 +74,9 @@ impl Callable for MiniScriptFunction {
                 match interpreter.execute(statement) {
                     Ok(_) => {}
                     Err(e) => {
-                        if e.message.starts_with("RETURN:") {
-                            // Extract return value
-                            let return_val_str = &e.message[7..];
-                            result = Ok(interpreter.parse_return_value(return_val_str));
+                        if e.message == "RETURN_VALUE" && e.return_value.is_some() {
+                            // Extract return value directly
+                            result = Ok(e.return_value.unwrap());
                         } else {
                             result = Err(e);
                         }
@@ -249,11 +249,12 @@ impl Interpreter {
                 } else {
                     Value::Nil
                 };
-                // Use a special error message to signal return
-                Err(RuntimeError::new(
-                    format!("RETURN:{}", self.value_to_string(&return_value)),
+                // Use RuntimeError with return_value to properly handle all value types
+                Err(RuntimeError::with_return_value(
+                    "RETURN_VALUE".to_string(),
                     None,
                     &self.filename,
+                    return_value,
                 ))
             }
             Stmt::While { condition, body } => {
