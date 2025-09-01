@@ -1,15 +1,41 @@
 param(
     [switch]$Python,
+    [switch]$Release,
     [string[]]$Tests
 )
 
 $PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 
-$ExePath = Join-Path $PSScriptRoot "mini_script.exe"
+# Determine which Rust binary to use (debug or release)
+$BuildType = if ($Release) { "release" } else { "debug" }
+$RustBinaryPath = Join-Path $PSScriptRoot "target\$BuildType\mini_script.exe"
 $PythonPath = Join-Path $PSScriptRoot "mini_script.py"
 
-$Command = $ExePath
+$Command = $RustBinaryPath
 $InitialArgs = @()
+
+# Check if the Rust binary exists, if not, build it
+if (-not (Test-Path $RustBinaryPath)) {
+    Write-Host "Rust binary not found at $RustBinaryPath"
+    Write-Host "Building Rust binary..."
+    if ($Release) {
+        $BuildResult = & cargo build --release
+    } else {
+        $BuildResult = & cargo build
+    }
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to build Rust binary" -ForegroundColor Red
+        exit 1
+    }
+    
+    if (-not (Test-Path $RustBinaryPath)) {
+        Write-Host "Build completed but binary still not found at $RustBinaryPath" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Build completed successfully"
+    Write-Host ""
+}
 
 if ($Python) {
     $Command = "python"
@@ -22,7 +48,7 @@ Write-Host "=================================================="
 if ($Python) {
     Write-Host "Interpreter: python $PythonPath"
 } else {
-    Write-Host "Interpreter: $ExePath"
+    Write-Host "Interpreter: $RustBinaryPath ($BuildType build)"
 }
 Write-Host ""
 

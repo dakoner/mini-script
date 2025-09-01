@@ -139,13 +139,9 @@ impl Environment {
             return Ok(());
         }
         
-        // Try to assign in enclosing scope
+        // Try to assign in enclosing scope recursively
         if let Some(enclosing) = &self.enclosing {
-            let mut enclosing_borrowed = enclosing.borrow_mut();
-            if enclosing_borrowed.values.contains_key(name) {
-                enclosing_borrowed.values.insert(name.to_string(), value);
-                return Ok(());
-            }
+            return enclosing.borrow_mut().assign(name_token, value);
         }
         
         // If not found anywhere, create in current scope (implicit declaration)
