@@ -1,0 +1,11 @@
+[package]
+name = "mini_script"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mini_script"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4"
