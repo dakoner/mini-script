@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::io::{Read, Write};
-use chrono::{DateTime, Local, NaiveDateTime, Datelike, Timelike};
+use chrono::{DateTime, NaiveDateTime, NaiveDate, Datelike, Timelike, Utc};
 use crate::interpreter::{Value, Callable};
 use crate::error::RuntimeError;
 
@@ -87,9 +87,18 @@ impl Callable for BuiltinTimeFormat {
             )),
         };
 
-        let dt = DateTime::<Local>::from(UNIX_EPOCH + std::time::Duration::from_secs_f64(timestamp));
-        match dt.format(format_str).to_string() {
-            result => Ok(Value::String(result)),
+        // Convert timestamp to DateTime in UTC (to match the parsing)
+        let dt = DateTime::<Utc>::from_timestamp(timestamp as i64, 0);
+        match dt {
+            Some(datetime) => {
+                let result = datetime.format(format_str).to_string();
+                Ok(Value::String(result))
+            }
+            None => Err(RuntimeError::new(
+                "Invalid timestamp.".to_string(),
+                None,
+                "<builtin>",
+            )),
         }
     }
 }
@@ -121,12 +130,23 @@ impl Callable for BuiltinTimeParse {
             )),
         };
 
+        // Try parsing as full datetime first
         match NaiveDateTime::parse_from_str(time_str, format_str) {
             Ok(dt) => {
                 let timestamp = dt.and_utc().timestamp() as f64;
                 Ok(Value::Number(timestamp))
             }
-            Err(_) => Ok(Value::Nil),
+            Err(_) => {
+                // If that fails, try parsing as date-only and assume start of day
+                match NaiveDate::parse_from_str(time_str, format_str) {
+                    Ok(date) => {
+                        let dt = date.and_hms_opt(0, 0, 0).unwrap();
+                        let timestamp = dt.and_utc().timestamp() as f64;
+                        Ok(Value::Number(timestamp))
+                    }
+                    Err(_) => Ok(Value::Nil),
+                }
+            }
         }
     }
 }
@@ -152,8 +172,15 @@ macro_rules! time_component_builtin {
                     )),
                 };
 
-                let dt = DateTime::<Local>::from(UNIX_EPOCH + std::time::Duration::from_secs_f64(timestamp));
-                Ok(Value::Number(dt.$method() as f64))
+                let dt = DateTime::<Utc>::from_timestamp(timestamp as i64, 0);
+                match dt {
+                    Some(datetime) => Ok(Value::Number(datetime.$method() as f64)),
+                    None => Err(RuntimeError::new(
+                        "Invalid timestamp.".to_string(),
+                        None,
+                        "<builtin>",
+                    )),
+                }
             }
         }
     };
@@ -184,8 +211,15 @@ impl Callable for BuiltinTimeWeekday {
             )),
         };
 
-        let dt = DateTime::<Local>::from(UNIX_EPOCH + std::time::Duration::from_secs_f64(timestamp));
-        Ok(Value::Number(dt.weekday().num_days_from_monday() as f64))
+        let dt = DateTime::<Utc>::from_timestamp(timestamp as i64, 0);
+        match dt {
+            Some(datetime) => Ok(Value::Number(datetime.weekday().num_days_from_monday() as f64)),
+            None => Err(RuntimeError::new(
+                "Invalid timestamp.".to_string(),
+                None,
+                "<builtin>",
+            )),
+        }
     }
 }
 

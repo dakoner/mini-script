@@ -631,6 +631,106 @@ impl Interpreter {
                     )),
                 }
             }
+            "time_parse" => {
+                use crate::builtin::BuiltinTimeParse;
+                let parser = BuiltinTimeParse;
+                parser.call(self, args)
+            }
+            "time_format" => {
+                use crate::builtin::BuiltinTimeFormat;
+                let formatter = BuiltinTimeFormat;
+                formatter.call(self, args)
+            }
+            "time_now" => {
+                use crate::builtin::BuiltinTimeNow;
+                let now_fn = BuiltinTimeNow;
+                now_fn.call(self, args)
+            }
+            "time_year" => {
+                use crate::builtin::BuiltinTimeYear;
+                let year_fn = BuiltinTimeYear;
+                year_fn.call(self, args)
+            }
+            "time_month" => {
+                use crate::builtin::BuiltinTimeMonth;
+                let month_fn = BuiltinTimeMonth;
+                month_fn.call(self, args)
+            }
+            "time_day" => {
+                use crate::builtin::BuiltinTimeDay;
+                let day_fn = BuiltinTimeDay;
+                day_fn.call(self, args)
+            }
+            "time_hour" => {
+                use crate::builtin::BuiltinTimeHour;
+                let hour_fn = BuiltinTimeHour;
+                hour_fn.call(self, args)
+            }
+            "time_minute" => {
+                use crate::builtin::BuiltinTimeMinute;
+                let minute_fn = BuiltinTimeMinute;
+                minute_fn.call(self, args)
+            }
+            "time_second" => {
+                use crate::builtin::BuiltinTimeSecond;
+                let second_fn = BuiltinTimeSecond;
+                second_fn.call(self, args)
+            }
+            "time_weekday" => {
+                use crate::builtin::BuiltinTimeWeekday;
+                let weekday_fn = BuiltinTimeWeekday;
+                weekday_fn.call(self, args)
+            }
+            "time_add" => {
+                use crate::builtin::BuiltinTimeAdd;
+                let add_fn = BuiltinTimeAdd;
+                add_fn.call(self, args)
+            }
+            "time_diff" => {
+                use crate::builtin::BuiltinTimeDiff;
+                let diff_fn = BuiltinTimeDiff;
+                diff_fn.call(self, args)
+            }
+            "sleep" => {
+                use crate::builtin::BuiltinSleep;
+                let sleep_fn = BuiltinSleep;
+                sleep_fn.call(self, args)
+            }
+            "fopen" => {
+                use crate::builtin::BuiltinFOpen;
+                let open_fn = BuiltinFOpen;
+                open_fn.call(self, args)
+            }
+            "fclose" => {
+                use crate::builtin::BuiltinFClose;
+                let close_fn = BuiltinFClose;
+                close_fn.call(self, args)
+            }
+            "fwrite" => {
+                use crate::builtin::BuiltinFWrite;
+                let write_fn = BuiltinFWrite;
+                write_fn.call(self, args)
+            }
+            "fread" => {
+                use crate::builtin::BuiltinFRead;
+                let read_fn = BuiltinFRead;
+                read_fn.call(self, args)
+            }
+            "freadline" => {
+                use crate::builtin::BuiltinFReadLine;
+                let readline_fn = BuiltinFReadLine;
+                readline_fn.call(self, args)
+            }
+            "fwriteline" => {
+                use crate::builtin::BuiltinFWriteLine;
+                let writeline_fn = BuiltinFWriteLine;
+                writeline_fn.call(self, args)
+            }
+            "fexists" => {
+                use crate::builtin::BuiltinFExists;
+                let exists_fn = BuiltinFExists;
+                exists_fn.call(self, args)
+            }
             _ => {
                 // For now, just return nil for unimplemented built-ins
                 Ok(Value::Nil)
