@@ -1975,12 +1975,12 @@ void execute_import_stmt(Interpreter *interpreter, Stmt *stmt) {
   interpret(interpreter, statements);
 
   // Cleanup imported module resources
-  free_statements(statements);          // deep free AST
+  free_statements(statements);             // deep free AST
   free_tokens(tokens, lexer->token_count); // tokens + lexeme/literal strings
-  free(parser);                         // parser struct
-  free(lexer);                          // lexer struct (its tokens already freed)
-  free(source);                         // source code buffer
-  free(full_path);                      // constructed path string
+  free(parser);                            // parser struct
+  free(lexer);     // lexer struct (its tokens already freed)
+  free(source);    // source code buffer
+  free(full_path); // constructed path string
 }
 
 void execute_return_stmt(Interpreter *interpreter, Stmt *stmt) {
@@ -2489,8 +2489,8 @@ static void free_expr(struct Expr *expr) {
     return;
   switch (expr->type) {
   case EXPR_LITERAL:
-  // String memory is freed when values stored in environments are cleaned.
-  // Avoid double-free by not freeing here.
+    // String memory is freed when values stored in environments are cleaned.
+    // Avoid double-free by not freeing here.
     break;
   case EXPR_VARIABLE:
     break;

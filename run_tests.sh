@@ -4,7 +4,7 @@
 # Check for flags
 VERBOSE=false
 USE_PYTHON=false
-INTERPRETER="./mini_script"
+INTERPRETER="build/debug/mini_script"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
