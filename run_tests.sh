@@ -4,7 +4,6 @@ set -euo pipefail
 
 VERBOSE=false
 USE_PYTHON=false
-NO_BUILD=false
 INTERPRETER=""
 TIMEOUT=30
 
@@ -21,8 +20,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -v|--verbose) VERBOSE=true; shift ;;
-        --python) USE_PYTHON=true; shift ;;
-        --no-build) NO_BUILD=true; shift ;;
+    --python) USE_PYTHON=true; shift ;;
         -t|--timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -41,32 +39,17 @@ detect_interpreter() {
         fi
     else
         # Prefer new src/c build
-            if [[ -x src/c/mini_script ]]; then
-                INTERPRETER="src/c/mini_script"
-            else
-                # attempt build unless disabled
-                if ! $NO_BUILD; then
-                    if [[ -d src/c ]]; then
-                        $VERBOSE && echo "[build] (cd src/c && make -s)"
-                        if (cd src/c && make -s); then
-                            if [[ -x src/c/mini_script ]]; then
-                                INTERPRETER="src/c/mini_script"
-                            fi
-                        fi
-                    fi
-                fi
-                if [[ -z "$INTERPRETER" || ! -x $INTERPRETER ]]; then
-                    if [[ -x build/debug/mini_script ]]; then
-                        INTERPRETER="build/debug/mini_script"
-                    elif [[ -x ./mini_script ]]; then
-                        INTERPRETER="./mini_script"
-                    else
-                        echo "C interpreter binary not found. Tried: src/c/mini_script, build/debug/mini_script, ./mini_script" >&2
-                        echo "Build it via: (cd src/c && make)" >&2
-                        exit 1
-                    fi
-                fi
-            fi
+        if [[ -x src/c/mini_script ]]; then
+            INTERPRETER="src/c/mini_script"
+        elif [[ -x build/debug/mini_script ]]; then
+            INTERPRETER="build/debug/mini_script"
+        elif [[ -x ./mini_script ]]; then
+            INTERPRETER="./mini_script"
+        else
+            echo "C interpreter binary not found. Tried: src/c/mini_script, build/debug/mini_script, ./mini_script" >&2
+            echo "Build it manually first, e.g.: (cd src/c && make)" >&2
+            exit 1
+        fi
     fi
 }
 
@@ -94,19 +77,19 @@ run_test() {
     if $VERBOSE; then
         if eval $cmd; then
             echo "✓ PASSED"
-            ((passed_tests++))
+            passed_tests=$((passed_tests+1))
         else
             handle_failure $? "$test_file"
         fi
     else
         if eval $cmd > /dev/null 2>&1; then
             echo "✓ PASSED"
-            ((passed_tests++))
+            passed_tests=$((passed_tests+1))
         else
             handle_failure $? "$test_file"
         fi
     fi
-    ((total_tests++))
+    total_tests=$((total_tests+1))
 }
 
 handle_failure() {
@@ -118,7 +101,7 @@ handle_failure() {
         *)   echo "✗ FAILED (exit $code)" ;;
     esac
     $VERBOSE || echo "  Re-run with -v to inspect: $INTERPRETER $file"
-    ((failed_tests++))
+    failed_tests=$((failed_tests+1))
 }
 
 shopt -s nullglob
