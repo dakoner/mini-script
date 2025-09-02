@@ -1,6 +1,34 @@
 # Mini Script Language
 
-A powerful scripting language implemented in C that supports variables, user-defined functions, modules, control flow, and data structures.
+A powerful scripting language with multiple implementations in different programming languages.
+
+## Implementations
+
+This repository contains three implementations of the Mini Script interpreter:
+
+- **[Rust Implementation](src/rust/)** - Full-featured, production-ready implementation
+- **[C Implementation](src/c/)** - Lightweight, portable implementation  
+- **[Python Implementation](src/py/)** - Educational reference implementation
+
+## Quick Start
+
+### Rust (Recommended)
+```bash
+cargo build
+cargo run -- examples/1_arithmetic.ms
+```
+
+### C
+```bash
+cd src/c
+make
+./mini_script ../../examples/1_arithmetic.ms
+```
+
+### Python
+```bash
+python src/py/mini_script.py examples/1_arithmetic.ms
+```
 
 ## Features
 

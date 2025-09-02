@@ -5,7 +5,7 @@ edition = "2021"
 
 [[bin]]
 name = "mini_script"
-path = "src/main.rs"
+path = "src/rust/main.rs"
 
 [dependencies]
 chrono = "0.4"
