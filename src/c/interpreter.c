@@ -546,6 +546,29 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
     return list_value;
   }
 
+  case EXPR_LOGICAL: {
+    Value *left = interpreter_evaluate(interpreter, expr->as.logical.left, error);
+    if (*error)
+      return NULL;
+
+    // Short-circuit evaluation
+    if (expr->as.logical.op.type == AND) {
+      // For AND: if left is false, don't evaluate right
+      if (!is_truthy(left)) {
+        return left; // Return the falsy left value
+      }
+    } else if (expr->as.logical.op.type == OR) {
+      // For OR: if left is true, don't evaluate right
+      if (is_truthy(left)) {
+        return left; // Return the truthy left value
+      }
+    }
+
+    // If we get here, we need to evaluate the right side
+    value_free(left);
+    return interpreter_evaluate(interpreter, expr->as.logical.right, error);
+  }
+
   default:
     *error = runtime_error_new("Unknown expression type.", 0, "<interpreter>");
     return NULL;

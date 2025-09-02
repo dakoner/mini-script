@@ -239,6 +239,22 @@ static void scan_token(Lexer *lexer) {
   case '>':
     add_token(lexer, match(lexer, '=') ? GREATER_EQUAL : GREATER, NULL);
     break;
+  case '&':
+    if (match(lexer, '&')) {
+      add_token(lexer, AND, NULL);
+    } else {
+      // Single & is not supported, could be an error
+      add_token(lexer, EOF_TOKEN, NULL); // Treat as error for now
+    }
+    break;
+  case '|':
+    if (match(lexer, '|')) {
+      add_token(lexer, OR, NULL);
+    } else {
+      // Single | is not supported, could be an error
+      add_token(lexer, EOF_TOKEN, NULL); // Treat as error for now
+    }
+    break;
   case ' ':
   case '\r':
   case '\t':
