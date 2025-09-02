@@ -4,7 +4,7 @@
 param(
     [switch]$Debug,
     [switch]$Verbose,
-    [string]$Compiler = "auto"
+    [string]$Compiler = "gcc"
 )
 
 # Set error action preference
