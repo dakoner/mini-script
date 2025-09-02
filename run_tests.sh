@@ -1,157 +1,140 @@
 #!/bin/bash
-# Unix test runner script - runs test files sequentially
+# Unified test runner for Mini Script (C + Python implementations)
+set -euo pipefail
 
-# Check for flags
 VERBOSE=false
 USE_PYTHON=false
-INTERPRETER="build/debug/mini_script"
+NO_BUILD=false
+INTERPRETER=""
+TIMEOUT=30
 
-# Parse command line arguments
+usage() {
+    cat <<EOF
+Usage: $0 [options]
+    -v, --verbose      Show interpreter output for each test
+            --python       Use Python implementation (auto-detect path)
+    -t, --timeout N    Per-test timeout seconds (default: $TIMEOUT)
+    -h, --help         Show this help
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        -v|--verbose)
-            VERBOSE=true
-            shift
-            ;;
-        --python)
-            USE_PYTHON=true
-            INTERPRETER="python mini_script.py"
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo "Options:"
-            echo "  -v, --verbose    Show detailed output for all tests"
-            echo "  --python         Use Python implementation instead of C implementation"
-            echo "  -h, --help       Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Use -h or --help for usage information"
-            exit 1
-            ;;
+    case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        --python) USE_PYTHON=true; shift ;;
+        --no-build) NO_BUILD=true; shift ;;
+        -t|--timeout) TIMEOUT="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
 
+detect_interpreter() {
+    if $USE_PYTHON; then
+        if [[ -f src/py/mini_script.py ]]; then
+            INTERPRETER="python src/py/mini_script.py"
+        elif [[ -f mini_script.py ]]; then
+            INTERPRETER="python mini_script.py"
+        else
+            echo "Python implementation not found (expected src/py/mini_script.py)" >&2
+            exit 1
+        fi
+    else
+        # Prefer new src/c build
+            if [[ -x src/c/mini_script ]]; then
+                INTERPRETER="src/c/mini_script"
+            else
+                # attempt build unless disabled
+                if ! $NO_BUILD; then
+                    if [[ -d src/c ]]; then
+                        $VERBOSE && echo "[build] (cd src/c && make -s)"
+                        if (cd src/c && make -s); then
+                            if [[ -x src/c/mini_script ]]; then
+                                INTERPRETER="src/c/mini_script"
+                            fi
+                        fi
+                    fi
+                fi
+                if [[ -z "$INTERPRETER" || ! -x $INTERPRETER ]]; then
+                    if [[ -x build/debug/mini_script ]]; then
+                        INTERPRETER="build/debug/mini_script"
+                    elif [[ -x ./mini_script ]]; then
+                        INTERPRETER="./mini_script"
+                    else
+                        echo "C interpreter binary not found. Tried: src/c/mini_script, build/debug/mini_script, ./mini_script" >&2
+                        echo "Build it via: (cd src/c && make)" >&2
+                        exit 1
+                    fi
+                fi
+            fi
+    fi
+}
+
+detect_interpreter
+
 echo "Running Mini Script test suite..."
-if [ "$USE_PYTHON" = true ]; then
-    echo "(Using Python implementation: $INTERPRETER)"
+if $USE_PYTHON; then
+    echo "(Python interpreter: $INTERPRETER)"
 else
-    echo "(Using C implementation: $INTERPRETER)"
+    echo "(C interpreter: $INTERPRETER)"
 fi
-if [ "$VERBOSE" = true ]; then
-    echo "(Verbose mode enabled)"
-fi
+$VERBOSE && echo "(Verbose mode)"
 echo "=================================="
 
-# Initialize counters
 total_tests=0
 passed_tests=0
 failed_tests=0
 
-# Check if the chosen interpreter exists and is executable
-if [ "$USE_PYTHON" = true ]; then
-    if ! command -v python &> /dev/null; then
-        echo "Error: Python interpreter not found"
-        echo "Please ensure Python is installed and in your PATH"
-        exit 1
-    fi
-    if [ ! -f "mini_script.py" ]; then
-        echo "Error: mini_script.py not found in current directory"
-        exit 1
-    fi
-else
-    if [ ! -f "./mini_script" ]; then
-        echo "Error: ./mini_script not found"
-        echo "Please build the C implementation first using 'make' or use --python flag"
-        exit 1
-    fi
-    if [ ! -x "./mini_script" ]; then
-        echo "Error: ./mini_script is not executable"
-        echo "Please run 'chmod +x ./mini_script' or rebuild using 'make'"
-        exit 1
-    fi
-fi
-
-# Function to run a single test file
 run_test() {
     local test_file="$1"
-    local test_name=$(basename "$test_file")
-    
-    echo -n "Running $test_name... "
-    
-    # Use timeout to prevent hanging tests (30 second limit)
-    if [ "$VERBOSE" = true ]; then
-        # In verbose mode, show output
-        if timeout 30 $INTERPRETER "$test_file"; then
+    local name
+    name=$(basename "$test_file")
+    printf 'Running %s... ' "$name"
+    local cmd="timeout $TIMEOUT $INTERPRETER \"$test_file\""
+    if $VERBOSE; then
+        if eval $cmd; then
             echo "✓ PASSED"
             ((passed_tests++))
         else
-            local exit_code=$?
-            handle_test_failure "$exit_code" "$test_file"
+            handle_failure $? "$test_file"
         fi
     else
-        # In normal mode, suppress output
-        if timeout 30 $INTERPRETER "$test_file" > /dev/null 2>&1; then
+        if eval $cmd > /dev/null 2>&1; then
             echo "✓ PASSED"
             ((passed_tests++))
         else
-            local exit_code=$?
-            handle_test_failure "$exit_code" "$test_file"
+            handle_failure $? "$test_file"
         fi
     fi
     ((total_tests++))
 }
 
-# Function to handle test failures
-handle_test_failure() {
-    local exit_code=$1
-    local test_file=$2
-    
-    if [ $exit_code -eq 124 ]; then
-        echo "✗ TIMEOUT (>30s)"
-        echo "  Test timed out after 30 seconds"
-    elif [ $exit_code -eq 139 ]; then
-        echo "✗ SEGFAULT"
-        echo "  Segmentation fault detected"
-    elif [ $exit_code -eq 137 ]; then
-        echo "✗ KILLED"
-        echo "  Process was killed (possibly out of memory)"
-    else
-        echo "✗ FAILED (exit code: $exit_code)"
-        echo "  Error running: $INTERPRETER $test_file"
-    fi
+handle_failure() {
+    local code=$1 file=$2
+    case $code in
+        124) echo "✗ TIMEOUT (${TIMEOUT}s)" ;;
+        139) echo "✗ SEGFAULT" ;;
+        137) echo "✗ KILLED" ;;
+        *)   echo "✗ FAILED (exit $code)" ;;
+    esac
+    $VERBOSE || echo "  Re-run with -v to inspect: $INTERPRETER $file"
     ((failed_tests++))
 }
 
-# Run all test files in the tests directory
-if [ -d "tests" ]; then
-    for test_file in tests/test_*.ms; do
-        if [ -f "$test_file" ]; then
-            run_test "$test_file"
-        fi
-    done
-else
-    echo "Error: tests directory not found"
+shopt -s nullglob
+test_files=(tests/test_*.ms)
+if [[ ${#test_files[@]} -eq 0 ]]; then
+    echo "No tests found (pattern tests/test_*.ms)" >&2
     exit 1
 fi
+for f in "${test_files[@]}"; do
+    run_test "$f"
+done
 
-# Print summary
 echo "=================================="
-echo "Test Summary:"
-echo "  Total:  $total_tests"
-echo "  Passed: $passed_tests"
-echo "  Failed: $failed_tests"
-
-if [ $failed_tests -eq 0 ]; then
-    echo "✓ All tests passed!"
-    exit 0
+echo "Test Summary:"; printf '  Total:  %d\n  Passed: %d\n  Failed: %d\n' $total_tests $passed_tests $failed_tests
+if [[ $failed_tests -eq 0 ]]; then
+    echo "✓ All tests passed!"; exit 0
 else
-    echo "✗ $failed_tests test(s) failed"
-    if [ "$VERBOSE" = false ]; then
-        echo ""
-        echo "Run with -v or --verbose to see detailed output for failed tests"
-    fi
-    exit 1
+    echo "✗ $failed_tests test(s) failed"; exit 1
 fi

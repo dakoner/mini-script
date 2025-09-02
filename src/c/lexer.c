@@ -287,12 +287,13 @@ LiteralValue* literal_new(LiteralType type) {
     LiteralValue* literal = malloc(sizeof(LiteralValue));
     literal->type = type;
     memset(&literal->value, 0, sizeof(literal->value));
+    literal->owns_string = false;
     return literal;
 }
 
 void literal_free(LiteralValue* literal) {
     if (literal) {
-        if (literal->type == LITERAL_STRING && literal->value.string) {
+        if (literal->type == LITERAL_STRING && literal->value.string && literal->owns_string) {
             free(literal->value.string);
         }
         free(literal);

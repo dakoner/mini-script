@@ -60,6 +60,7 @@ typedef struct {
         bool boolean;
         char character;
     } value;
+    bool owns_string; /* for LITERAL_STRING */
 } LiteralValue;
 
 /* Token structure */
@@ -249,7 +250,7 @@ struct Expr {
 struct Environment {
     struct {
         char** keys;
-        Value* values;
+    Value** values; /* Owned Value* objects */
         size_t count;
         size_t capacity;
     } values;

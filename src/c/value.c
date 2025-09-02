@@ -1,5 +1,15 @@
 #include "mini_script.h"
 
+/* Local safe strdup replacement (portable) */
+static char* ms_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char* copy = malloc(len + 1);
+    if (!copy) return NULL; /* Allocation failure propagates as NULL */
+    memcpy(copy, s, len + 1);
+    return copy;
+}
+
 /* Value functions */
 Value* value_new(ValueType type) {
     Value* value = malloc(sizeof(Value));
@@ -247,33 +257,32 @@ void expr_free(Expr* expr) {
 
 /* Utility functions */
 char* stringify_value(Value* value) {
-    if (!value) return strdup("nil");
+    if (!value) return ms_strdup("nil");
     
-    char* result;
     char buffer[256];
     
     switch (value->type) {
         case VALUE_NIL:
-            return strdup("nil");
+            return ms_strdup("nil");
         case VALUE_BOOLEAN:
-            return strdup(value->as.boolean ? "true" : "false");
+            return ms_strdup(value->as.boolean ? "true" : "false");
         case VALUE_NUMBER:
             snprintf(buffer, sizeof(buffer), "%.6g", value->as.number);
-            return strdup(buffer);
+            return ms_strdup(buffer);
         case VALUE_STRING:
-            return strdup(value->as.string);
+            return ms_strdup(value->as.string);
         case VALUE_LIST:
             // Simple list representation
-            return strdup("[list]");
+            return ms_strdup("[list]");
         case VALUE_FUNCTION:
-            return strdup("<function>");
+            return ms_strdup("<function>");
         case VALUE_BUILTIN:
             snprintf(buffer, sizeof(buffer), "<builtin %s>", value->as.builtin_name);
-            return strdup(buffer);
+            return ms_strdup(buffer);
         case VALUE_FILE_HANDLE:
-            return strdup("<file>");
+            return ms_strdup("<file>");
         default:
-            return strdup("unknown");
+            return ms_strdup("unknown");
     }
 }
 

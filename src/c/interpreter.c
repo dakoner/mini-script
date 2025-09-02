@@ -1,6 +1,16 @@
 #include "mini_script.h"
 #include <math.h>
 
+/* Local strdup replacement */
+static char* ms_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char* copy = malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1);
+    return copy;
+}
+
 /* Builtin function implementations */
 static Value* builtin_print(Interpreter* interpreter, Value** args, int arg_count) {
     for (int i = 0; i < arg_count; i++) {
@@ -83,15 +93,15 @@ void interpreter_free(Interpreter* interpreter) {
 
 void interpreter_define_builtins(Interpreter* interpreter) {
     Value* print_builtin = value_new(VALUE_BUILTIN);
-    print_builtin->as.builtin_name = strdup("print");
+    print_builtin->as.builtin_name = ms_strdup("print");
     environment_define(interpreter->globals, "print", print_builtin);
     
     Value* len_builtin = value_new(VALUE_BUILTIN);
-    len_builtin->as.builtin_name = strdup("len");
+    len_builtin->as.builtin_name = ms_strdup("len");
     environment_define(interpreter->globals, "len", len_builtin);
     
     Value* time_now_builtin = value_new(VALUE_BUILTIN);
-    time_now_builtin->as.builtin_name = strdup("time_now");
+    time_now_builtin->as.builtin_name = ms_strdup("time_now");
     environment_define(interpreter->globals, "time_now", time_now_builtin);
 }
 
@@ -121,7 +131,7 @@ Value* interpreter_evaluate(Interpreter* interpreter, Expr* expr, RuntimeError**
                     break;
                 case LITERAL_STRING:
                     value->type = VALUE_STRING;
-                    value->as.string = strdup(expr->as.literal.value.value.string);
+                    value->as.string = ms_strdup(expr->as.literal.value.value.string);
                     break;
                 case LITERAL_CHAR:
                     value->type = VALUE_STRING;
@@ -136,26 +146,18 @@ Value* interpreter_evaluate(Interpreter* interpreter, Expr* expr, RuntimeError**
         case EXPR_VARIABLE: {
             Value* stored_value = environment_get(interpreter->environment, &expr->as.variable.name, error);
             if (*error) return NULL;
-            
-            // Return a copy of the stored value
             return value_copy(stored_value);
         }
         
         case EXPR_ASSIGN: {
-            Value* value = interpreter_evaluate(interpreter, expr->as.assign.value, error);
+            Value* rhs = interpreter_evaluate(interpreter, expr->as.assign.value, error);
             if (*error) return NULL;
-            
-            Value* value_copy = value_new(value->type);
-            *value_copy = *value;
-            // Shallow copy for now
-            
-            environment_assign(interpreter->environment, &expr->as.assign.name, value_copy, error);
+            environment_assign(interpreter->environment, &expr->as.assign.name, rhs, error);
             if (*error) {
-                value_free(value);
+                value_free(rhs);
                 return NULL;
             }
-            
-            return value;
+            return rhs;
         }
         
         case EXPR_BINARY: {
@@ -447,6 +449,7 @@ void interpreter_execute(Interpreter* interpreter, Stmt* stmt, RuntimeError** er
             }
             
             environment_define(interpreter->environment, stmt->as.var.name.lexeme, value);
+            value_free(value); /* define makes a copy */
             break;
         }
         
@@ -490,6 +493,26 @@ void interpreter_execute(Interpreter* interpreter, Stmt* stmt, RuntimeError** er
                 
                 interpreter_execute(interpreter, stmt->as.while_stmt.body, error);
                 if (*error) return;
+            }
+            break;
+        }
+
+        case STMT_ASSERT: {
+            Value* condition = interpreter_evaluate(interpreter, stmt->as.assert_stmt.condition, error);
+            if (*error) return;
+            bool ok = is_truthy(condition);
+            value_free(condition);
+            if (!ok) {
+                const char* msg = "Assertion failed";
+                if (stmt->as.assert_stmt.message) {
+                    Value* msg_val = interpreter_evaluate(interpreter, stmt->as.assert_stmt.message, error);
+                    if (!*error && msg_val && msg_val->type == VALUE_STRING) {
+                        msg = msg_val->as.string;
+                    }
+                    if (msg_val) value_free(msg_val);
+                }
+                *error = runtime_error_new(msg, stmt->as.assert_stmt.keyword.line, "<assert>");
+                return;
             }
             break;
         }

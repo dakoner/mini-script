@@ -15,7 +15,9 @@ void environment_free(Environment* env) {
     
     for (size_t i = 0; i < env->values.count; i++) {
         free(env->values.keys[i]);
-        // Don't free values here since they're stored by value, not pointer
+        if (env->values.values[i]) {
+            value_free(env->values.values[i]);
+        }
     }
     free(env->values.keys);
     free(env->values.values);
@@ -27,7 +29,10 @@ void environment_define(Environment* env, const char* name, Value* value) {
     for (size_t i = 0; i < env->values.count; i++) {
         if (strcmp(env->values.keys[i], name) == 0) {
             // Replace existing value
-            env->values.values[i] = *value;
+            if (env->values.values[i]) {
+                value_free(env->values.values[i]);
+            }
+            env->values.values[i] = value_copy(value); /* store copy */
             return;
         }
     }
@@ -36,12 +41,12 @@ void environment_define(Environment* env, const char* name, Value* value) {
     if (env->values.count >= env->values.capacity) {
         env->values.capacity = env->values.capacity == 0 ? 8 : env->values.capacity * 2;
         env->values.keys = realloc(env->values.keys, env->values.capacity * sizeof(char*));
-        env->values.values = realloc(env->values.values, env->values.capacity * sizeof(Value));
+    env->values.values = realloc(env->values.values, env->values.capacity * sizeof(Value*));
     }
     
     env->values.keys[env->values.count] = malloc(strlen(name) + 1);
     strcpy(env->values.keys[env->values.count], name);
-    env->values.values[env->values.count] = *value;
+    env->values.values[env->values.count] = value_copy(value);
     env->values.count++;
 }
 
@@ -49,7 +54,7 @@ Value* environment_get(Environment* env, Token* name, RuntimeError** error) {
     // Search current environment
     for (size_t i = 0; i < env->values.count; i++) {
         if (strcmp(env->values.keys[i], name->lexeme) == 0) {
-            return &env->values.values[i];
+            return env->values.values[i];
         }
     }
     
@@ -69,7 +74,10 @@ void environment_assign(Environment* env, Token* name, Value* value, RuntimeErro
     // Search current environment
     for (size_t i = 0; i < env->values.count; i++) {
         if (strcmp(env->values.keys[i], name->lexeme) == 0) {
-            env->values.values[i] = *value;
+            if (env->values.values[i]) {
+                value_free(env->values.values[i]);
+            }
+            env->values.values[i] = value_copy(value);
             return;
         }
     }

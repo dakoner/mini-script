@@ -1,6 +1,16 @@
 #include "mini_script.h"
 #include <stdarg.h>
 
+/* Local strdup replacement */
+static char* ms_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char* copy = malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1);
+    return copy;
+}
+
 static bool check(Parser* parser, TokenType type) {
     if (parser->current >= parser->count) return false;
     return parser->tokens[parser->current].type == type;
@@ -78,7 +88,34 @@ static Expr* primary(Parser* parser, RuntimeError** error) {
         Token* token = previous(parser);
         Expr* expr = expr_new(EXPR_LITERAL);
         if (token->literal) {
-            expr->as.literal.value = *token->literal;
+            expr->as.literal.value.type = token->literal->type;
+            switch (token->literal->type) {
+                case LITERAL_STRING:
+                    if (token->literal->value.string) {
+                        size_t len = strlen(token->literal->value.string);
+                        expr->as.literal.value.value.string = malloc(len + 1);
+                        memcpy(expr->as.literal.value.value.string, token->literal->value.string, len + 1);
+                        expr->as.literal.value.owns_string = true;
+                    } else {
+                        expr->as.literal.value.value.string = NULL;
+                        expr->as.literal.value.owns_string = false;
+                    }
+                    break;
+                case LITERAL_NUMBER:
+                    expr->as.literal.value.value.number = token->literal->value.number;
+                    break;
+                case LITERAL_INTEGER:
+                    expr->as.literal.value.value.integer = token->literal->value.integer;
+                    break;
+                case LITERAL_BOOLEAN:
+                    expr->as.literal.value.value.boolean = token->literal->value.boolean;
+                    break;
+                case LITERAL_CHAR:
+                    expr->as.literal.value.value.character = token->literal->value.character;
+                    break;
+                case LITERAL_NIL:
+                    break;
+            }
         } else {
             expr->as.literal.value.type = LITERAL_NIL;
         }
@@ -89,7 +126,7 @@ static Expr* primary(Parser* parser, RuntimeError** error) {
         Token* name = previous(parser);
         Expr* expr = expr_new(EXPR_VARIABLE);
         expr->as.variable.name = *name;
-        expr->as.variable.name.lexeme = strdup(name->lexeme);
+    expr->as.variable.name.lexeme = ms_strdup(name->lexeme);
         return expr;
     }
     
@@ -152,7 +189,7 @@ static Expr* finish_call(Parser* parser, Expr* callee, RuntimeError** error) {
     Expr* expr = expr_new(EXPR_CALL);
     expr->as.call.callee = callee;
     expr->as.call.paren = parser->tokens[parser->current - 1]; // LEFT_PAREN
-    expr->as.call.paren.lexeme = strdup(expr->as.call.paren.lexeme);
+    expr->as.call.paren.lexeme = ms_strdup(expr->as.call.paren.lexeme);
     expr->as.call.arguments.expressions = NULL;
     expr->as.call.arguments.count = 0;
     expr->as.call.arguments.capacity = 0;
@@ -228,7 +265,7 @@ static Expr* unary(Parser* parser, RuntimeError** error) {
         
         Expr* expr = expr_new(EXPR_UNARY);
         expr->as.unary.op = *op;
-        expr->as.unary.op.lexeme = strdup(op->lexeme);
+    expr->as.unary.op.lexeme = ms_strdup(op->lexeme);
         expr->as.unary.right = right;
         return expr;
     }
@@ -251,7 +288,7 @@ static Expr* factor(Parser* parser, RuntimeError** error) {
         Expr* binary = expr_new(EXPR_BINARY);
         binary->as.binary.left = expr;
         binary->as.binary.op = *op;
-        binary->as.binary.op.lexeme = strdup(op->lexeme);
+    binary->as.binary.op.lexeme = ms_strdup(op->lexeme);
         binary->as.binary.right = right;
         expr = binary;
     }
@@ -274,7 +311,7 @@ static Expr* term(Parser* parser, RuntimeError** error) {
         Expr* binary = expr_new(EXPR_BINARY);
         binary->as.binary.left = expr;
         binary->as.binary.op = *op;
-        binary->as.binary.op.lexeme = strdup(op->lexeme);
+    binary->as.binary.op.lexeme = ms_strdup(op->lexeme);
         binary->as.binary.right = right;
         expr = binary;
     }
@@ -297,7 +334,7 @@ static Expr* comparison(Parser* parser, RuntimeError** error) {
         Expr* binary = expr_new(EXPR_BINARY);
         binary->as.binary.left = expr;
         binary->as.binary.op = *op;
-        binary->as.binary.op.lexeme = strdup(op->lexeme);
+    binary->as.binary.op.lexeme = ms_strdup(op->lexeme);
         binary->as.binary.right = right;
         expr = binary;
     }
@@ -320,7 +357,7 @@ static Expr* equality(Parser* parser, RuntimeError** error) {
         Expr* binary = expr_new(EXPR_BINARY);
         binary->as.binary.left = expr;
         binary->as.binary.op = *op;
-        binary->as.binary.op.lexeme = strdup(op->lexeme);
+    binary->as.binary.op.lexeme = ms_strdup(op->lexeme);
         binary->as.binary.right = right;
         expr = binary;
     }
@@ -343,7 +380,7 @@ static Expr* and_expr(Parser* parser, RuntimeError** error) {
         Expr* logical = expr_new(EXPR_LOGICAL);
         logical->as.logical.left = expr;
         logical->as.logical.op = *op;
-        logical->as.logical.op.lexeme = strdup(op->lexeme);
+    logical->as.logical.op.lexeme = ms_strdup(op->lexeme);
         logical->as.logical.right = right;
         expr = logical;
     }
@@ -366,7 +403,7 @@ static Expr* or_expr(Parser* parser, RuntimeError** error) {
         Expr* logical = expr_new(EXPR_LOGICAL);
         logical->as.logical.left = expr;
         logical->as.logical.op = *op;
-        logical->as.logical.op.lexeme = strdup(op->lexeme);
+    logical->as.logical.op.lexeme = ms_strdup(op->lexeme);
         logical->as.logical.right = right;
         expr = logical;
     }
@@ -392,7 +429,7 @@ static Expr* assignment(Parser* parser, RuntimeError** error) {
             
             Expr* assign = expr_new(EXPR_ASSIGN);
             assign->as.assign.name = name;
-            assign->as.assign.name.lexeme = strdup(name.lexeme);
+            assign->as.assign.name.lexeme = ms_strdup(name.lexeme);
             assign->as.assign.value = value;
             return assign;
         } else if (expr->type == EXPR_GET) {
@@ -602,7 +639,7 @@ static Stmt* return_statement(Parser* parser, RuntimeError** error) {
     
     Stmt* stmt = stmt_new(STMT_RETURN);
     stmt->as.return_stmt.keyword = *keyword;
-    stmt->as.return_stmt.keyword.lexeme = strdup(keyword->lexeme);
+    stmt->as.return_stmt.keyword.lexeme = ms_strdup(keyword->lexeme);
     stmt->as.return_stmt.value = value;
     return stmt;
 }
@@ -670,7 +707,7 @@ static Stmt* function_declaration(Parser* parser, const char* kind, RuntimeError
                 return NULL;
             }
             params[param_count++] = *param;
-            params[param_count - 1].lexeme = strdup(param->lexeme);
+            params[param_count - 1].lexeme = ms_strdup(param->lexeme);
         } while (match(parser, 1, COMMA));
     }
     
@@ -703,7 +740,7 @@ static Stmt* function_declaration(Parser* parser, const char* kind, RuntimeError
     
     Stmt* stmt = stmt_new(STMT_FUNCTION);
     stmt->as.function.name = *name;
-    stmt->as.function.name.lexeme = strdup(name->lexeme);
+    stmt->as.function.name.lexeme = ms_strdup(name->lexeme);
     stmt->as.function.params = params;
     stmt->as.function.param_count = param_count;
     stmt->as.function.body = body_stmt->as.block.statements;
@@ -735,7 +772,7 @@ static Stmt* var_declaration(Parser* parser, RuntimeError** error) {
     
     Stmt* stmt = stmt_new(STMT_VAR);
     stmt->as.var.name = *name;
-    stmt->as.var.name.lexeme = strdup(name->lexeme);
+    stmt->as.var.name.lexeme = ms_strdup(name->lexeme);
     stmt->as.var.initializer = initializer;
     return stmt;
 }
