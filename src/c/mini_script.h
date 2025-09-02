@@ -317,6 +317,7 @@ struct Interpreter {
   Environment *environment;
   char **modules_path;
   size_t modules_path_count;
+  Value *return_value;  // For function return values
 };
 
 /* Function prototypes */

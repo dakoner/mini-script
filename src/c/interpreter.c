@@ -82,6 +82,7 @@ Interpreter *interpreter_new(void) {
   interpreter->environment = interpreter->globals;
   interpreter->modules_path = NULL;
   interpreter->modules_path_count = 0;
+  interpreter->return_value = NULL;
 
   interpreter_define_builtins(interpreter);
 
@@ -95,6 +96,9 @@ void interpreter_free(Interpreter *interpreter) {
       free(interpreter->modules_path[i]);
     }
     free(interpreter->modules_path);
+    if (interpreter->return_value) {
+      value_free(interpreter->return_value);
+    }
     free(interpreter);
   }
 }
@@ -496,13 +500,28 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         // Execute function body
         for (size_t i = 0; i < callee->as.function->declaration->as.function.body.count && !*error; i++) {
           interpreter_execute(interpreter, callee->as.function->declaration->as.function.body.statements[i], error);
+          
+          // Check if this was a return statement
+          if (*error && strcmp((*error)->message, "return") == 0) {
+            // This is a return, extract the return value
+            if ((*error)->return_value) {
+              result = value_copy((*error)->return_value);
+            } else {
+              result = value_new(VALUE_NIL);
+            }
+            runtime_error_free(*error);
+            *error = NULL;
+            break;
+          }
         }
         
         // Restore previous environment
         interpreter->environment = previous;
         
-        // For now, user functions return nil (proper return value handling needs more work)
-        result = value_new(VALUE_NIL);
+        // If no return statement was executed, return nil
+        if (!result) {
+          result = value_new(VALUE_NIL);
+        }
       }
     } else {
       *error = runtime_error_new("Can only call functions and classes.",
@@ -755,17 +774,19 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
   }
 
   case STMT_RETURN: {
-    // For now, just evaluate the return value but don't do anything with it
-    // A proper implementation would need a way to unwind the call stack
-    // and return the value to the caller
+    Value *return_value = NULL;
     if (stmt->as.return_stmt.value != NULL) {
-      Value *value = interpreter_evaluate(interpreter, stmt->as.return_stmt.value, error);
+      return_value = interpreter_evaluate(interpreter, stmt->as.return_stmt.value, error);
       if (*error)
         return;
-      value_free(value);
+    } else {
+      return_value = value_new(VALUE_NIL);
     }
-    // Just continue execution for now
-    break;
+    
+    // Create a special "return" error to unwind the call stack with the return value
+    *error = runtime_error_with_return("return", stmt->as.return_stmt.keyword.line, 
+                                       "<return>", return_value);
+    return;
   }
 
   default:
