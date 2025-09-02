@@ -21,6 +21,9 @@
     Specify specific test names to run (without .ms extension)
     If not specified, all tests in the tests/ directory will be run
 
+.PARAMETER Quiet
+    Suppress test output - only show pass/fail results (classic mode)
+
 .EXAMPLE
     .\run_tests.ps1
     Run all tests with the default Rust implementation (debug build)
@@ -36,12 +39,17 @@
 .EXAMPLE
     .\run_tests.ps1 -Release
     Run all tests with the Rust implementation (release build)
+
+.EXAMPLE
+    .\run_tests.ps1 -C -Quiet
+    Run all tests with the C implementation in quiet mode (no output shown unless tests fail)
 #>
 
 param(
     [switch]$Python,
     [switch]$C,
     [switch]$Release,
+    [switch]$Quiet,
     [string[]]$Tests
 )
 
@@ -151,11 +159,20 @@ foreach ($TestName in $TestsToRun) {
     # We check the exit code to determine pass/fail.
     $Output = & $Command $CurrentArgs 2>&1
     
+    # Always show the output for each test (unless -Quiet is specified)
+    if ($Output -and -not $Quiet) {
+        Write-Host "  Output:" -ForegroundColor Cyan
+        Write-Host "$($Output | Out-String)" -ForegroundColor Gray
+    }
+    
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  FAILED - $TestDesc" -ForegroundColor Red
         Write-Host "  Interpreter returned a non-zero exit code: $LASTEXITCODE"
-        Write-Host "  Output:"
-        Write-Host "$($Output | Out-String)" -ForegroundColor Gray
+        # Always show output for failed tests, even in quiet mode
+        if ($Output -and $Quiet) {
+            Write-Host "  Output:" -ForegroundColor Cyan
+            Write-Host "$($Output | Out-String)" -ForegroundColor Gray
+        }
         $Failed++
         $FailedTests.Add($TestName)
     } else {

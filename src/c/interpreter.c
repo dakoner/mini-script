@@ -474,6 +474,36 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         *error = runtime_error_new("Error calling builtin function.",
                                    expr->as.call.paren.line, "<interpreter>");
       }
+    } else if (callee->type == VALUE_FUNCTION) {
+      // Check parameter count
+      if (expr->as.call.arguments.count != callee->as.function->declaration->as.function.param_count) {
+        *error = runtime_error_new("Wrong number of arguments.",
+                                   expr->as.call.paren.line, "<interpreter>");
+      } else {
+        // Create new environment for function scope
+        Environment *previous = interpreter->environment;
+        interpreter->environment = environment_new(callee->as.function->closure);
+        
+        // Bind parameters to arguments
+        for (size_t i = 0; i < callee->as.function->declaration->as.function.param_count; i++) {
+          // Create a copy of the argument value for the parameter
+          Value *arg_copy = value_copy(arguments[i]);
+          environment_define(interpreter->environment, 
+                           callee->as.function->declaration->as.function.params[i].lexeme, 
+                           arg_copy);
+        }
+        
+        // Execute function body
+        for (size_t i = 0; i < callee->as.function->declaration->as.function.body.count && !*error; i++) {
+          interpreter_execute(interpreter, callee->as.function->declaration->as.function.body.statements[i], error);
+        }
+        
+        // Restore previous environment
+        interpreter->environment = previous;
+        
+        // For now, user functions return nil (proper return value handling needs more work)
+        result = value_new(VALUE_NIL);
+      }
     } else {
       *error = runtime_error_new("Can only call functions and classes.",
                                  expr->as.call.paren.line, "<interpreter>");
@@ -646,6 +676,31 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
           runtime_error_new(msg, stmt->as.assert_stmt.keyword.line, "<assert>");
       return;
     }
+    break;
+  }
+
+  case STMT_FUNCTION: {
+    // Create a function value and define it in the current environment
+    Value *func = value_new(VALUE_FUNCTION);
+    func->as.function = malloc(sizeof(MiniScriptFunction));
+    func->as.function->declaration = stmt;
+    func->as.function->closure = interpreter->environment;
+    
+    environment_define(interpreter->environment, stmt->as.function.name.lexeme, func);
+    break;
+  }
+
+  case STMT_RETURN: {
+    // For now, just evaluate the return value but don't do anything with it
+    // A proper implementation would need a way to unwind the call stack
+    // and return the value to the caller
+    if (stmt->as.return_stmt.value != NULL) {
+      Value *value = interpreter_evaluate(interpreter, stmt->as.return_stmt.value, error);
+      if (*error)
+        return;
+      value_free(value);
+    }
+    // Just continue execution for now
     break;
   }
 

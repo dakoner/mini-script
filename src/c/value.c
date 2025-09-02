@@ -77,8 +77,9 @@ void value_free(Value *value) {
     break;
   case VALUE_FUNCTION:
     if (value->as.function) {
-      stmt_free(value->as.function->declaration);
-      environment_free(value->as.function->closure);
+      // Don't free declaration or closure as they are shared references
+      // stmt_free(value->as.function->declaration);
+      // environment_free(value->as.function->closure);
       free(value->as.function);
     }
     break;
