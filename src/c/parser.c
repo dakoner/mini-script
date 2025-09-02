@@ -68,6 +68,7 @@ static Expr *expression(Parser *parser, RuntimeError **error);
 static Stmt *statement(Parser *parser, RuntimeError **error);
 static Stmt *declaration(Parser *parser, RuntimeError **error);
 static Stmt *for_statement(Parser *parser, RuntimeError **error);
+static Stmt *import_statement(Parser *parser, RuntimeError **error);
 static Stmt *var_declaration(Parser *parser, RuntimeError **error);
 static Stmt *expression_statement(Parser *parser, RuntimeError **error);
 static void synchronize(Parser *parser) {
@@ -808,6 +809,23 @@ static Stmt *return_statement(Parser *parser, RuntimeError **error) {
   return stmt;
 }
 
+static Stmt *import_statement(Parser *parser, RuntimeError **error) {
+  // Expect a string literal for the path
+  Token *path = consume(parser, STRING, "Expected string literal after 'import'.", error);
+  if (*error)
+    return NULL;
+
+  consume(parser, SEMICOLON, "Expected ';' after import path.", error);
+  if (*error)
+    return NULL;
+
+  Stmt *stmt = stmt_new(STMT_IMPORT);
+  stmt->as.import.path_token = *path;
+  stmt->as.import.path_token.lexeme = ms_strdup(path->lexeme);
+  stmt->as.import.namespace_token = NULL; // No namespace support for now
+  return stmt;
+}
+
 static Stmt *block_statement(Parser *parser, RuntimeError **error) {
   Stmt *stmt = stmt_new(STMT_BLOCK);
   stmt->as.block.statements.statements = NULL;
@@ -848,6 +866,8 @@ static Stmt *statement(Parser *parser, RuntimeError **error) {
     return if_statement(parser, error);
   if (match(parser, 1, FOR))
     return for_statement(parser, error);
+  if (match(parser, 1, IMPORT))
+    return import_statement(parser, error);
   if (match(parser, 1, PRINT))
     return print_statement(parser, error);
   if (match(parser, 1, ASSERT))

@@ -62,6 +62,64 @@ static Value *builtin_time_now(Interpreter *interpreter, Value **args,
   return result;
 }
 
+static Value *builtin_time_add(Interpreter *interpreter, Value **args,
+                               int arg_count) {
+  if (arg_count != 2)
+    return NULL;
+    
+  if (args[0]->type != VALUE_NUMBER || args[1]->type != VALUE_NUMBER)
+    return NULL;
+
+  Value *result = value_new(VALUE_NUMBER);
+  result->as.number = args[0]->as.number + args[1]->as.number;
+  return result;
+}
+
+static Value *builtin_time_diff(Interpreter *interpreter, Value **args,
+                                int arg_count) {
+  if (arg_count != 2)
+    return NULL;
+    
+  if (args[0]->type != VALUE_NUMBER || args[1]->type != VALUE_NUMBER)
+    return NULL;
+
+  Value *result = value_new(VALUE_NUMBER);
+  result->as.number = args[0]->as.number - args[1]->as.number;
+  return result;
+}
+
+static Value *builtin_assert(Interpreter *interpreter, Value **args,
+                            int arg_count) {
+  if (arg_count < 1 || arg_count > 2) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  // First argument should be the condition (truthy/falsy)
+  Value *condition = args[0];
+  bool is_true = false;
+  
+  if (condition->type == VALUE_BOOLEAN) {
+    is_true = condition->as.boolean;
+  } else if (condition->type == VALUE_NUMBER) {
+    is_true = condition->as.number != 0.0;
+  } else if (condition->type == VALUE_STRING) {
+    is_true = strlen(condition->as.string) > 0;
+  }
+  
+  if (!is_true) {
+    // If there's a second argument (message), use it in error
+    if (arg_count == 2 && args[1]->type == VALUE_STRING) {
+      printf("Assertion failed: %s\n", args[1]->as.string);
+    } else {
+      printf("Assertion failed\n");
+    }
+    exit(1); // Simple assertion failure
+  }
+  
+  Value *result = value_new(VALUE_NIL);
+  return result;
+}
+
 static Value *call_builtin_function(Interpreter *interpreter, const char *name,
                                     Value **args, int arg_count) {
   if (strcmp(name, "print") == 0) {
@@ -70,6 +128,12 @@ static Value *call_builtin_function(Interpreter *interpreter, const char *name,
     return builtin_len(interpreter, args, arg_count);
   } else if (strcmp(name, "time_now") == 0) {
     return builtin_time_now(interpreter, args, arg_count);
+  } else if (strcmp(name, "time_add") == 0) {
+    return builtin_time_add(interpreter, args, arg_count);
+  } else if (strcmp(name, "time_diff") == 0) {
+    return builtin_time_diff(interpreter, args, arg_count);
+  } else if (strcmp(name, "assert") == 0) {
+    return builtin_assert(interpreter, args, arg_count);
   }
 
   return NULL; // Unknown builtin
@@ -115,6 +179,18 @@ void interpreter_define_builtins(Interpreter *interpreter) {
   Value *time_now_builtin = value_new(VALUE_BUILTIN);
   time_now_builtin->as.builtin_name = ms_strdup("time_now");
   environment_define(interpreter->globals, "time_now", time_now_builtin);
+
+  Value *time_add_builtin = value_new(VALUE_BUILTIN);
+  time_add_builtin->as.builtin_name = ms_strdup("time_add");
+  environment_define(interpreter->globals, "time_add", time_add_builtin);
+
+  Value *time_diff_builtin = value_new(VALUE_BUILTIN);
+  time_diff_builtin->as.builtin_name = ms_strdup("time_diff");
+  environment_define(interpreter->globals, "time_diff", time_diff_builtin);
+
+  Value *assert_builtin = value_new(VALUE_BUILTIN);
+  assert_builtin->as.builtin_name = ms_strdup("assert");
+  environment_define(interpreter->globals, "assert", assert_builtin);
 }
 
 Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
@@ -169,12 +245,18 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         interpreter_evaluate(interpreter, expr->as.assign.value, error);
     if (*error)
       return NULL;
+      
+    // Try to assign to existing variable first
+    RuntimeError *assign_error = NULL;
     environment_assign(interpreter->environment, &expr->as.assign.name, rhs,
-                       error);
-    if (*error) {
-      value_free(rhs);
-      return NULL;
+                       &assign_error);
+    
+    if (assign_error) {
+      // Variable doesn't exist, create it (implicit variable declaration)
+      runtime_error_free(assign_error);
+      environment_define(interpreter->environment, expr->as.assign.name.lexeme, rhs);
     }
+    
     /* rhs now owned by environment, return a copy to caller */
     return value_copy(rhs);
   }
@@ -787,6 +869,72 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
     *error = runtime_error_with_return("return", stmt->as.return_stmt.keyword.line, 
                                        "<return>", return_value);
     return;
+  }
+
+  case STMT_IMPORT: {
+    // For now, implement a basic import that loads and executes the file
+    // The path should be a string literal from the import statement
+    const char *path = stmt->as.import.path_token.lexeme;
+    
+    // Remove quotes from the path (it comes as "path")
+    size_t path_len = strlen(path);
+    if (path_len >= 2 && path[0] == '"' && path[path_len - 1] == '"') {
+      char *clean_path = malloc(path_len + 2); // Extra space for .ms
+      strncpy(clean_path, path + 1, path_len - 2);
+      clean_path[path_len - 2] = '\0';
+      
+      // Add .ms extension if not present
+      if (strlen(clean_path) < 3 || strcmp(clean_path + strlen(clean_path) - 3, ".ms") != 0) {
+        strcat(clean_path, ".ms");
+      }
+      
+      // Load and execute the imported file
+      FILE *file = fopen(clean_path, "r");
+      if (!file) {
+        free(clean_path);
+        *error = runtime_error_new("Could not open import file.", 
+                                   stmt->as.import.path_token.line, "<import>");
+        return;
+      }
+      
+      // Read file content
+      fseek(file, 0, SEEK_END);
+      long file_size = ftell(file);
+      fseek(file, 0, SEEK_SET);
+      
+      char *source = malloc(file_size + 1);
+      fread(source, 1, file_size, file);
+      source[file_size] = '\0';
+      fclose(file);
+      
+      // Parse and execute the imported file
+      Lexer *lexer = lexer_new(source);
+      lexer_scan_tokens(lexer);
+      
+      // Check if lexer encountered errors (simplified check)
+      Parser *parser = parser_new(lexer->tokens, lexer->token_count);
+      StmtList statements = parser_parse(parser, error);
+      
+      if (!*error) {
+        interpreter_interpret(interpreter, statements, error);
+      }
+      
+      // Cleanup statements
+      for (size_t i = 0; i < statements.count; i++) {
+        stmt_free(statements.statements[i]);
+      }
+      free(statements.statements);
+      
+      parser_free(parser);
+      lexer_free(lexer);
+      free(source);
+      free(clean_path);
+    } else {
+      *error = runtime_error_new("Invalid import path format.", 
+                                 stmt->as.import.path_token.line, "<import>");
+      return;
+    }
+    break;
   }
 
   default:
