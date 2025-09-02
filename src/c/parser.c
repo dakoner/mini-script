@@ -67,6 +67,9 @@ static Token *consume(Parser *parser, TokenType type, const char *message,
 static Expr *expression(Parser *parser, RuntimeError **error);
 static Stmt *statement(Parser *parser, RuntimeError **error);
 static Stmt *declaration(Parser *parser, RuntimeError **error);
+static Stmt *for_statement(Parser *parser, RuntimeError **error);
+static Stmt *var_declaration(Parser *parser, RuntimeError **error);
+static Stmt *expression_statement(Parser *parser, RuntimeError **error);
 static void synchronize(Parser *parser) {
   // Basic panic-mode recovery: advance until semicolon or likely statement
   // start
@@ -713,6 +716,75 @@ static Stmt *while_statement(Parser *parser, RuntimeError **error) {
   return stmt;
 }
 
+static Stmt *for_statement(Parser *parser, RuntimeError **error) {
+  consume(parser, LEFT_PAREN, "Expected '(' after 'for'.", error);
+  if (*error)
+    return NULL;
+
+  // Parse initializer (can be variable declaration or expression)
+  Stmt *initializer = NULL;
+  if (match(parser, 1, SEMICOLON)) {
+    // No initializer
+    initializer = NULL;
+  } else if (match(parser, 1, VAR)) {
+    initializer = var_declaration(parser, error);
+  } else {
+    initializer = expression_statement(parser, error);
+  }
+  if (*error)
+    return NULL;
+
+  // Parse condition
+  Expr *condition = NULL;
+  if (!check(parser, SEMICOLON)) {
+    condition = expression(parser, error);
+    if (*error) {
+      if (initializer) stmt_free(initializer);
+      return NULL;
+    }
+  }
+  consume(parser, SEMICOLON, "Expected ';' after for loop condition.", error);
+  if (*error) {
+    if (initializer) stmt_free(initializer);
+    if (condition) expr_free(condition);
+    return NULL;
+  }
+
+  // Parse increment
+  Expr *increment = NULL;
+  if (!check(parser, RIGHT_PAREN)) {
+    increment = expression(parser, error);
+    if (*error) {
+      if (initializer) stmt_free(initializer);
+      if (condition) expr_free(condition);
+      return NULL;
+    }
+  }
+  consume(parser, RIGHT_PAREN, "Expected ')' after for clauses.", error);
+  if (*error) {
+    if (initializer) stmt_free(initializer);
+    if (condition) expr_free(condition);
+    if (increment) expr_free(increment);
+    return NULL;
+  }
+
+  // Parse body
+  Stmt *body = statement(parser, error);
+  if (*error) {
+    if (initializer) stmt_free(initializer);
+    if (condition) expr_free(condition);
+    if (increment) expr_free(increment);
+    return NULL;
+  }
+
+  Stmt *stmt = stmt_new(STMT_FOR);
+  stmt->as.for_stmt.initializer = initializer;
+  stmt->as.for_stmt.condition = condition;
+  stmt->as.for_stmt.increment = increment;
+  stmt->as.for_stmt.body = body;
+  return stmt;
+}
+
 static Stmt *return_statement(Parser *parser, RuntimeError **error) {
   Token *keyword = previous(parser);
 
@@ -774,6 +846,8 @@ static Stmt *block_statement(Parser *parser, RuntimeError **error) {
 static Stmt *statement(Parser *parser, RuntimeError **error) {
   if (match(parser, 1, IF))
     return if_statement(parser, error);
+  if (match(parser, 1, FOR))
+    return for_statement(parser, error);
   if (match(parser, 1, PRINT))
     return print_statement(parser, error);
   if (match(parser, 1, ASSERT))

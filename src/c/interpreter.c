@@ -677,6 +677,47 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
     break;
   }
 
+  case STMT_FOR: {
+    // Execute initializer once
+    if (stmt->as.for_stmt.initializer) {
+      interpreter_execute(interpreter, stmt->as.for_stmt.initializer, error);
+      if (*error)
+        return;
+    }
+
+    // Loop with condition and increment
+    while (true) {
+      // Check condition (if no condition, assume true)
+      if (stmt->as.for_stmt.condition) {
+        Value *condition = interpreter_evaluate(
+            interpreter, stmt->as.for_stmt.condition, error);
+        if (*error)
+          return;
+
+        bool is_true = is_truthy(condition);
+        value_free(condition);
+
+        if (!is_true)
+          break;
+      }
+
+      // Execute body
+      interpreter_execute(interpreter, stmt->as.for_stmt.body, error);
+      if (*error)
+        return;
+
+      // Execute increment
+      if (stmt->as.for_stmt.increment) {
+        Value *inc_result = interpreter_evaluate(
+            interpreter, stmt->as.for_stmt.increment, error);
+        if (*error)
+          return;
+        value_free(inc_result);
+      }
+    }
+    break;
+  }
+
   case STMT_ASSERT: {
     Value *condition = interpreter_evaluate(
         interpreter, stmt->as.assert_stmt.condition, error);

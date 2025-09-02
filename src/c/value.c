@@ -203,6 +203,12 @@ void stmt_free(Stmt *stmt) {
     }
     free(stmt->as.function.body.statements);
     break;
+  case STMT_FOR:
+    stmt_free(stmt->as.for_stmt.initializer);
+    expr_free(stmt->as.for_stmt.condition);
+    expr_free(stmt->as.for_stmt.increment);
+    stmt_free(stmt->as.for_stmt.body);
+    break;
   case STMT_IF:
     expr_free(stmt->as.if_stmt.condition);
     stmt_free(stmt->as.if_stmt.then_branch);

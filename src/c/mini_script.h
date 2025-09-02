@@ -152,6 +152,7 @@ typedef enum {
   STMT_EXPRESSION,
   STMT_PRINT,
   STMT_FUNCTION,
+  STMT_FOR,
   STMT_IF,
   STMT_RETURN,
   STMT_WHILE,
@@ -185,6 +186,12 @@ struct Stmt {
       size_t param_count;
       StmtList body;
     } function;
+    struct {
+      Stmt *initializer;
+      Expr *condition;
+      Expr *increment;
+      Stmt *body;
+    } for_stmt;
     struct {
       Expr *condition;
       Stmt *then_branch;
