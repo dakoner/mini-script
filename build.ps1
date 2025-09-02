@@ -23,12 +23,16 @@ Write-Host "PowerShell Build Script v2.0" -ForegroundColor Blue
 Write-Host "=" * 50 -ForegroundColor Blue
 Write-Host ""
 
-# Verify source file exists
-if (-not (Test-Path "mini_script.c")) {
-    Write-Error "Error: mini_script.c not found in current directory"
+# Verify source files exist in src/c directory
+if (-not (Test-Path "src/c/main.c")) {
+    Write-Error "Error: C source files not found in src/c directory"
     Write-Host "Please run this script from the mini-script project root directory."
     exit 1
 }
+
+# Change to C source directory
+Write-Info "Changing to src/c directory..."
+Push-Location "src/c"
 
 # Compiler detection functions
 function Find-VisualStudio {
@@ -112,7 +116,7 @@ if errorlevel 1 (
     echo Failed to set up Visual Studio environment
     exit /b 1
 )
-cl $compilerFlags mini_script.c /Fe:mini_script.exe /link /SUBSYSTEM:CONSOLE
+cl $compilerFlags main.c lexer.c parser.c interpreter.c value.c environment.c /Fe:mini_script.exe /link /SUBSYSTEM:CONSOLE
 exit /b %errorlevel%
 "@
     
@@ -149,7 +153,7 @@ function Build-WithGCC {
         Write-Info "Building RELEASE version with optimizations..."
     }
     
-    $compileCommand = "$GccPath $compilerFlags -o mini_script.exe mini_script.c"
+    $compileCommand = "$GccPath $compilerFlags -o mini_script.exe main.c lexer.c parser.c interpreter.c value.c environment.c"
     
     if ($Verbose) {
         Write-Info "Command: $compileCommand"
@@ -182,7 +186,7 @@ function Build-WithClang {
         Write-Info "Building RELEASE version with optimizations..."
     }
     
-    $compileCommand = "clang $compilerFlags -o mini_script.exe mini_script.c"
+    $compileCommand = "clang $compilerFlags -o mini_script.exe main.c lexer.c parser.c interpreter.c value.c environment.c"
     
     if ($Verbose) {
         Write-Info "Command: $compileCommand"
@@ -275,6 +279,7 @@ switch ($Compiler.ToLower()) {
 
 # Check compilation result
 if (-not $compiled) {
+    Pop-Location  # Return to original directory
     Write-Host ""
     Write-Error "No suitable compiler found or compilation failed!"
     Write-Host ""
@@ -290,6 +295,7 @@ if (-not $compiled) {
 
 # Verify executable was created
 if (-not (Test-Path "mini_script.exe")) {
+    Pop-Location  # Return to original directory
     Write-Error "Compilation reported success but mini_script.exe not found!"
     exit 1
 }
@@ -323,11 +329,14 @@ try {
     Write-Warning "⚠ Could not test executable: $($_.Exception.Message)"
 }
 
+# Return to original directory
+Pop-Location
+
 Write-Host ""
 Write-Success "Build process complete!"
 Write-Host ""
 Write-Info "Usage examples:"
-Write-Host "  .\mini_script.exe script.ms     # Run a script file"
-Write-Host "  .\mini_script.exe               # Start REPL mode"
-Write-Host "  .\run_tests.bat                 # Run test suite"
+Write-Host "  .\src\c\mini_script.exe script.ms     # Run a script file"
+Write-Host "  .\src\c\mini_script.exe               # Start REPL mode"
+Write-Host "  .\run_tests.ps1                       # Run test suite"
 Write-Host ""
