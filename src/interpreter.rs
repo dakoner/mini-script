@@ -1,11 +1,94 @@
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::{BufReader, BufRead, Write, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::lexer::{Token, TokenType, LiteralValue};
 use crate::ast::{Stmt, Expr};
 use crate::error::RuntimeError;
 use crate::builtin::*;
+
+#[derive(Debug)]
+pub enum FileWrapper {
+    Reader(BufReader<File>),
+    Writer(File),
+}
+
+impl FileWrapper {
+    pub fn new_reader(file: File) -> Self {
+        FileWrapper::Reader(BufReader::new(file))
+    }
+    
+    pub fn new_writer(file: File) -> Self {
+        FileWrapper::Writer(file)
+    }
+    
+    pub fn read_line(&mut self) -> std::io::Result<String> {
+        match self {
+            FileWrapper::Reader(ref mut reader) => {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) => Ok(String::new()), // EOF
+                    Ok(_) => {
+                        // Remove trailing newline if present
+                        if line.ends_with('\n') {
+                            line.pop();
+                            if line.ends_with('\r') {
+                                line.pop();
+                            }
+                        }
+                        Ok(line)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            FileWrapper::Writer(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Cannot read from a writer",
+            )),
+        }
+    }
+    
+    pub fn read_all(&mut self) -> std::io::Result<String> {
+        match self {
+            FileWrapper::Reader(ref mut reader) => {
+                let mut content = String::new();
+                reader.read_to_string(&mut content)?;
+                Ok(content)
+            }
+            FileWrapper::Writer(ref mut file) => {
+                // For writers, we need to seek to beginning and read
+                file.seek(SeekFrom::Start(0))?;
+                let mut content = String::new();
+                file.read_to_string(&mut content)?;
+                Ok(content)
+            }
+        }
+    }
+    
+    pub fn write(&mut self, content: &str) -> std::io::Result<usize> {
+        match self {
+            FileWrapper::Writer(ref mut file) => {
+                file.write(content.as_bytes())
+            }
+            FileWrapper::Reader(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Cannot write to a reader",
+            )),
+        }
+    }
+    
+    pub fn write_line(&mut self, content: &str) -> std::io::Result<usize> {
+        self.write(&format!("{}\n", content))
+    }
+    
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            FileWrapper::Writer(ref mut file) => file.flush(),
+            FileWrapper::Reader(_) => Ok(()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {

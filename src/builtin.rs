@@ -1,5 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::{Read, Write};
+use std::io::{Read, Write, BufRead, BufReader, Seek, SeekFrom};
 use chrono::{DateTime, NaiveDateTime, NaiveDate, Datelike, Timelike, Utc};
 use crate::interpreter::{Value, Callable};
 use crate::error::RuntimeError;
@@ -427,18 +427,30 @@ impl Callable for BuiltinFReadLine {
 
     fn call(&self, _interpreter: &mut crate::interpreter::Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Value::FileHandle(ref file) = arguments[0] {
-            // For simplicity, we'll read the whole file and split by lines
+            // Simple approach: read one byte at a time until newline
             let mut file_borrowed = file.borrow_mut();
-            let mut contents = String::new();
-            match file_borrowed.read_to_string(&mut contents) {
-                Ok(_) => {
-                    if let Some(line) = contents.lines().next() {
-                        Ok(Value::String(line.to_string()))
-                    } else {
-                        Ok(Value::Nil)
+            let mut line = String::new();
+            let mut buffer = [0; 1];
+            
+            loop {
+                match file_borrowed.read(&mut buffer) {
+                    Ok(0) => break, // EOF
+                    Ok(_) => {
+                        let ch = buffer[0] as char;
+                        if ch == '\n' {
+                            break;
+                        } else if ch != '\r' {
+                            line.push(ch);
+                        }
                     }
+                    Err(_) => return Ok(Value::Nil),
                 }
-                Err(_) => Ok(Value::Nil),
+            }
+            
+            if line.is_empty() {
+                Ok(Value::Nil)
+            } else {
+                Ok(Value::String(line))
             }
         } else {
             Ok(Value::Nil)
