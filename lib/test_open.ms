@@ -1,5 +1,5 @@
 // Test each function one by one
-function open(string filename, string mode) {
+function open(filename, mode) {
     return fopen(filename, mode);
 }
 

@@ -1,5 +1,5 @@
 // Test writeline function
-function writeline(int handle, string line) {
+function writeline(handle, line) {
     return fwriteline(handle, line);
 }
 

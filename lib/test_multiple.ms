@@ -1,9 +1,9 @@
 // Test multiple functions
-function exists(string filename) {
+function exists(filename) {
     return fexists(filename);
 }
 
-function writeline(int handle, string line) {
+function writeline(handle, line) {
     return fwriteline(handle, line);
 }
 

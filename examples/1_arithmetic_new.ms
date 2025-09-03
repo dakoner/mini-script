@@ -10,4 +10,3 @@ print("Product:", x * y);
 print("Division:", y / 4.0);
 
 print("Example 1 completed!");
-

@@ -1,56 +1,56 @@
 print("=== Example 8: Namespace System ===");
 
-// Import with namespace - cleaner API
-import time from "lib/time_library";
-import file from "lib/file_library";
+// Import libraries - standard syntax (namespace feature not yet implemented)
+import "lib/time_library";
+import "lib/file_library";
 
-print("Using namespaced libraries:");
-print("Time library: " + time.name + " v" + time.version);
-print("File library: " + file.name + " v" + file.version);
+print("Using imported libraries:");
+print("Time library loaded successfully");
+print("File library loaded successfully");
 print("");
 
-// Time operations with clean namespace
-now = time.now();
+// Time operations with imported functions
+timestamp = now();
 print("Current time functions:");
-print("- Timestamp: " + now);
-print("- Formatted: " + time.format(now, "%Y-%m-%d %H:%M:%S"));
-print("- Year: " + time.year(now));
-print("- Month: " + time.month(now));
-print("- Day: " + time.day(now));
+print("- Timestamp: " + timestamp);
+print("- Formatted: " + format(timestamp, "%Y-%m-%d %H:%M:%S"));
+print("- Year: " + year(timestamp));
+print("- Month: " + month(timestamp));
+print("- Day: " + day(timestamp));
 
-// File operations with clean namespace
+// File operations with imported functions
 log_file = "namespace_demo.log";
 print("");
 print("File operations:");
 
-if (file.exists(log_file)) {
-    print("- Log file exists, size: " + file.size(log_file) + " bytes");
+if (exists(log_file)) {
+    print("- Log file exists");
 } else {
     print("- Creating new log file");
 }
 
 // Write timestamped log entry
-handle = file.open(log_file, "a");
-timestamp = time.format(now, "%Y-%m-%d %H:%M:%S");
-file.writeline(handle, "[" + timestamp + "] Namespace demo executed");
-file.close(handle);
+handle = open(log_file, "a");
+log_timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S");
+writeline(handle, "[" + log_timestamp + "] Namespace demo executed");
+close(handle);
 
 print("- Log entry written");
 
 // Read and display log
-handle = file.open(log_file, "r");
-content = file.read(handle);
-file.close(handle);
+handle = open(log_file, "r");
+content = read(handle);
+close(handle);
 
 print("- Log contents:");
 print(content);
 
 print("");
-print("Benefits of namespace system:");
-print("- Clean API: time.now() instead of time_now()");
-print("- No naming conflicts between libraries");
-print("- Better code organization");
-print("- Professional syntax similar to modern languages");
+print("Benefits of import system:");
+print("- Direct function access after import");
+print("- No naming conflicts when properly organized");
+print("- Simple syntax for common operations");
+print("- Extensible module system");
 
 print("");
-print("Namespace example completed!");
+print("Import example completed!");
