@@ -87,8 +87,9 @@ void value_free(Value *value) {
     free(value->as.builtin_name);
     break;
   case VALUE_FILE_HANDLE:
-    if (value->as.file_handle)
-      fclose(value->as.file_handle);
+    // Don't auto-close file handles - they should be explicitly closed
+    // if (value->as.file_handle)
+    //   fclose(value->as.file_handle);
     break;
   default:
     break;
@@ -137,7 +138,7 @@ Value *value_copy(Value *value) {
     strcpy(copy->as.builtin_name, value->as.builtin_name);
     break;
   case VALUE_FILE_HANDLE:
-    copy->as.file_handle = value->as.file_handle; // Shallow copy
+    copy->as.file_handle = value->as.file_handle; // Shallow copy - potential issue
     break;
   }
 

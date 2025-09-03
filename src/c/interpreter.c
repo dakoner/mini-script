@@ -120,6 +120,207 @@ static Value *builtin_assert(Interpreter *interpreter, Value **args,
   return result;
 }
 
+// File I/O functions
+static Value *builtin_fopen(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 2) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_STRING || args[1]->type != VALUE_STRING) {
+    return NULL; // Error: arguments must be strings
+  }
+  
+  const char *filename = args[0]->as.string;
+  const char *mode = args[1]->as.string;
+  
+  FILE *file = fopen(filename, mode);
+  if (!file) {
+    Value *result = value_new(VALUE_NIL);
+    return result;
+  }
+  
+  Value *result = value_new(VALUE_FILE_HANDLE);
+  result->as.file_handle = file;
+  return result;
+}
+
+static Value *builtin_fclose(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 1) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_FILE_HANDLE) {
+    return NULL; // Error: argument must be a file handle
+  }
+  
+  FILE *file = args[0]->as.file_handle;
+  if (file == NULL) {
+    // Already closed
+    Value *result = value_new(VALUE_NUMBER);
+    result->as.number = -1.0;
+    return result;
+  }
+  
+  int result_code = fclose(file);
+  args[0]->as.file_handle = NULL; // Mark as closed to prevent double-close
+  
+  Value *result = value_new(VALUE_NUMBER);
+  result->as.number = (double)result_code;
+  return result;
+}
+
+static Value *builtin_fwrite(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 2) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_FILE_HANDLE || args[1]->type != VALUE_STRING) {
+    return NULL; // Error: invalid argument types
+  }
+  
+  FILE *file = args[0]->as.file_handle;
+  if (file == NULL) {
+    Value *result = value_new(VALUE_NUMBER);
+    result->as.number = 0.0; // Can't write to closed file
+    return result;
+  }
+  
+  const char *content = args[1]->as.string;
+  
+  size_t bytes_written = fwrite(content, 1, strlen(content), file);
+  
+  // Flush to ensure data is written
+  fflush(file);
+  
+  Value *result = value_new(VALUE_NUMBER);
+  result->as.number = (double)bytes_written;
+  return result;
+}
+
+static Value *builtin_fread(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 1) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_FILE_HANDLE) {
+    return NULL; // Error: argument must be a file handle
+  }
+  
+  FILE *file = args[0]->as.file_handle;
+  if (file == NULL) {
+    Value *result = value_new(VALUE_STRING);
+    result->as.string = ms_strdup("");
+    return result;
+  }
+  
+  // Get file size
+  long current_pos = ftell(file);
+  fseek(file, 0, SEEK_END);
+  long file_size = ftell(file);
+  fseek(file, current_pos, SEEK_SET);
+  
+  // Read remaining content from current position
+  long remaining = file_size - current_pos;
+  if (remaining <= 0) {
+    Value *result = value_new(VALUE_STRING);
+    result->as.string = ms_strdup("");
+    return result;
+  }
+  
+  char *buffer = malloc(remaining + 1);
+  size_t bytes_read = fread(buffer, 1, remaining, file);
+  buffer[bytes_read] = '\0';
+  
+  Value *result = value_new(VALUE_STRING);
+  result->as.string = buffer; // Transfer ownership
+  return result;
+}
+
+static Value *builtin_freadline(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 1) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_FILE_HANDLE) {
+    return NULL; // Error: argument must be a file handle
+  }
+  
+  FILE *file = args[0]->as.file_handle;
+  if (file == NULL) {
+    Value *result = value_new(VALUE_NIL);
+    return result;
+  }
+  
+  // Simple line reading implementation
+  char buffer[1024];
+  if (fgets(buffer, sizeof(buffer), file) == NULL) {
+    Value *result = value_new(VALUE_NIL);
+    return result;
+  }
+  
+  // Remove trailing newline if present
+  size_t len = strlen(buffer);
+  if (len > 0 && buffer[len - 1] == '\n') {
+    buffer[len - 1] = '\0';
+    len--;
+  }
+  if (len > 0 && buffer[len - 1] == '\r') {
+    buffer[len - 1] = '\0';
+  }
+  
+  Value *result = value_new(VALUE_STRING);
+  result->as.string = ms_strdup(buffer);
+  return result;
+}
+
+static Value *builtin_fwriteline(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 2) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_FILE_HANDLE || args[1]->type != VALUE_STRING) {
+    return NULL; // Error: invalid argument types
+  }
+  
+  FILE *file = args[0]->as.file_handle;
+  if (file == NULL) {
+    Value *result = value_new(VALUE_NUMBER);
+    result->as.number = 0.0;
+    return result;
+  }
+  
+  const char *line = args[1]->as.string;
+  
+  size_t bytes_written = fwrite(line, 1, strlen(line), file);
+  bytes_written += fwrite("\n", 1, 1, file); // Add newline
+  
+  Value *result = value_new(VALUE_NUMBER);
+  result->as.number = (double)bytes_written;
+  return result;
+}
+
+static Value *builtin_fexists(Interpreter *interpreter, Value **args, int arg_count) {
+  if (arg_count != 1) {
+    return NULL; // Error: wrong number of arguments
+  }
+  
+  if (args[0]->type != VALUE_STRING) {
+    return NULL; // Error: argument must be a string
+  }
+  
+  const char *filename = args[0]->as.string;
+  
+  FILE *file = fopen(filename, "r");
+  bool exists = (file != NULL);
+  if (file) {
+    fclose(file);
+  }
+  
+  Value *result = value_new(VALUE_BOOLEAN);
+  result->as.boolean = exists;
+  return result;
+}
+
 static Value *call_builtin_function(Interpreter *interpreter, const char *name,
                                     Value **args, int arg_count) {
   if (strcmp(name, "print") == 0) {
@@ -134,6 +335,20 @@ static Value *call_builtin_function(Interpreter *interpreter, const char *name,
     return builtin_time_diff(interpreter, args, arg_count);
   } else if (strcmp(name, "assert") == 0) {
     return builtin_assert(interpreter, args, arg_count);
+  } else if (strcmp(name, "fopen") == 0) {
+    return builtin_fopen(interpreter, args, arg_count);
+  } else if (strcmp(name, "fclose") == 0) {
+    return builtin_fclose(interpreter, args, arg_count);
+  } else if (strcmp(name, "fwrite") == 0) {
+    return builtin_fwrite(interpreter, args, arg_count);
+  } else if (strcmp(name, "fread") == 0) {
+    return builtin_fread(interpreter, args, arg_count);
+  } else if (strcmp(name, "freadline") == 0) {
+    return builtin_freadline(interpreter, args, arg_count);
+  } else if (strcmp(name, "fwriteline") == 0) {
+    return builtin_fwriteline(interpreter, args, arg_count);
+  } else if (strcmp(name, "fexists") == 0) {
+    return builtin_fexists(interpreter, args, arg_count);
   }
 
   return NULL; // Unknown builtin
@@ -191,6 +406,35 @@ void interpreter_define_builtins(Interpreter *interpreter) {
   Value *assert_builtin = value_new(VALUE_BUILTIN);
   assert_builtin->as.builtin_name = ms_strdup("assert");
   environment_define(interpreter->globals, "assert", assert_builtin);
+
+  // File I/O functions
+  Value *fopen_builtin = value_new(VALUE_BUILTIN);
+  fopen_builtin->as.builtin_name = ms_strdup("fopen");
+  environment_define(interpreter->globals, "fopen", fopen_builtin);
+
+  Value *fclose_builtin = value_new(VALUE_BUILTIN);
+  fclose_builtin->as.builtin_name = ms_strdup("fclose");
+  environment_define(interpreter->globals, "fclose", fclose_builtin);
+
+  Value *fwrite_builtin = value_new(VALUE_BUILTIN);
+  fwrite_builtin->as.builtin_name = ms_strdup("fwrite");
+  environment_define(interpreter->globals, "fwrite", fwrite_builtin);
+
+  Value *fread_builtin = value_new(VALUE_BUILTIN);
+  fread_builtin->as.builtin_name = ms_strdup("fread");
+  environment_define(interpreter->globals, "fread", fread_builtin);
+
+  Value *freadline_builtin = value_new(VALUE_BUILTIN);
+  freadline_builtin->as.builtin_name = ms_strdup("freadline");
+  environment_define(interpreter->globals, "freadline", freadline_builtin);
+
+  Value *fwriteline_builtin = value_new(VALUE_BUILTIN);
+  fwriteline_builtin->as.builtin_name = ms_strdup("fwriteline");
+  environment_define(interpreter->globals, "fwriteline", fwriteline_builtin);
+
+  Value *fexists_builtin = value_new(VALUE_BUILTIN);
+  fexists_builtin->as.builtin_name = ms_strdup("fexists");
+  environment_define(interpreter->globals, "fexists", fexists_builtin);
 }
 
 Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
