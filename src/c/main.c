@@ -31,7 +31,7 @@ char *read_file(const char *filename) {
   return buffer;
 }
 
-static int run(const char *source) {
+static int run(const char *source, const char *filename) {
   Lexer *lexer = lexer_new(source);
   lexer_scan_tokens(lexer);
   const char *debug_tokens = getenv("MS_DEBUG_TOKENS");
@@ -48,12 +48,16 @@ static int run(const char *source) {
     }
   }
 
-  Parser *parser = parser_new(lexer->tokens, lexer->token_count);
+  Parser *parser = parser_new(lexer->tokens, lexer->token_count, filename);
   RuntimeError *error = NULL;
   StmtList statements = parser_parse(parser, &error);
 
   if (error) {
-    fprintf(stderr, "Parse error: %s\n", error->message);
+    if (error->line > 0) {
+      fprintf(stderr, "Parse error at %s:%zu: %s\n", error->filename, error->line, error->message);
+    } else {
+      fprintf(stderr, "Parse error: %s\n", error->message);
+    }
     runtime_error_free(error);
     parser_free(parser);
     lexer_free(lexer);
@@ -61,11 +65,16 @@ static int run(const char *source) {
   }
 
   Interpreter *interpreter = interpreter_new();
+  interpreter_set_filename(interpreter, filename);
   interpreter_interpret(interpreter, statements, &error);
 
   int exit_code = 0;
   if (error) {
-    fprintf(stderr, "Runtime error: %s\n", error->message);
+    if (error->line > 0) {
+      fprintf(stderr, "Runtime error at %s:%zu: %s\n", error->filename, error->line, error->message);
+    } else {
+      fprintf(stderr, "Runtime error: %s\n", error->message);
+    }
     runtime_error_free(error);
     exit_code = 70; // Exit code for runtime error
   }
@@ -89,7 +98,7 @@ void run_file(const char *filename) {
     exit(74);
   }
 
-  int exit_code = run(source);
+  int exit_code = run(source, filename);
   free(source);
   
   if (exit_code != 0) {
@@ -109,7 +118,7 @@ void run_prompt(void) {
     }
 
     // In REPL mode, we don't exit on errors, just continue
-    run(line);
+    run(line, "<repl>");
   }
 }
 

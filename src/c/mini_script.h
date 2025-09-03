@@ -318,6 +318,7 @@ struct Interpreter {
   char **modules_path;
   size_t modules_path_count;
   Value *return_value;  // For function return values
+  char *current_filename; // Current source filename for error reporting
 };
 
 /* Function prototypes */
@@ -348,13 +349,14 @@ void expr_free(Expr *expr);
 Environment *environment_new(Environment *enclosing);
 void environment_free(Environment *environment);
 void environment_define(Environment *env, const char *name, Value *value);
-Value *environment_get(Environment *env, Token *name, RuntimeError **error);
+Value *environment_get(Environment *env, Token *name, RuntimeError **error, const char *filename);
 void environment_assign(Environment *env, Token *name, Value *value,
-                        RuntimeError **error);
+                        RuntimeError **error, const char *filename);
 
 /* Interpreter functions */
 Interpreter *interpreter_new(void);
 void interpreter_free(Interpreter *interpreter);
+void interpreter_set_filename(Interpreter *interpreter, const char *filename);
 void interpreter_interpret(Interpreter *interpreter, StmtList statements,
                            RuntimeError **error);
 Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
@@ -382,9 +384,10 @@ typedef struct {
   Token *tokens;
   size_t current;
   size_t count;
+  char *filename; // Source filename for error reporting
 } Parser;
 
-Parser *parser_new(Token *tokens, size_t count);
+Parser *parser_new(Token *tokens, size_t count, const char *filename);
 void parser_free(Parser *parser);
 StmtList parser_parse(Parser *parser, RuntimeError **error);
 

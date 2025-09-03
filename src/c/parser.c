@@ -59,7 +59,7 @@ static Token *consume(Parser *parser, TokenType type, const char *message,
   }
 
   Token *token = &parser->tokens[parser->current];
-  *error = runtime_error_new(message, token->line, "<parser>");
+  *error = runtime_error_new(message, token->line, parser->filename ? parser->filename : "<unknown>");
   return NULL;
 }
 
@@ -214,7 +214,7 @@ static Expr *primary(Parser *parser, RuntimeError **error) {
   }
 
   Token *token = &parser->tokens[parser->current];
-  *error = runtime_error_new("Expected expression.", token->line, "<parser>");
+  *error = runtime_error_new("Expected expression.", token->line, parser->filename ? parser->filename : "<unknown>");
   synchronize(parser);
   return NULL;
 }
@@ -498,7 +498,7 @@ static Expr *assignment(Parser *parser, RuntimeError **error) {
     }
 
     *error = runtime_error_new("Invalid assignment target.", equals->line,
-                               "<parser>");
+                               parser->filename ? parser->filename : "<unknown>");
     expr_free(expr);
     expr_free(value);
     return NULL;
@@ -511,16 +511,20 @@ static Expr *expression(Parser *parser, RuntimeError **error) {
   return assignment(parser, error);
 }
 
-Parser *parser_new(Token *tokens, size_t count) {
+Parser *parser_new(Token *tokens, size_t count, const char *filename) {
   Parser *parser = malloc(sizeof(Parser));
   parser->tokens = tokens;
   parser->current = 0;
   parser->count = count;
+  parser->filename = filename ? ms_strdup(filename) : NULL;
   return parser;
 }
 
 void parser_free(Parser *parser) {
   if (parser) {
+    if (parser->filename) {
+      free(parser->filename);
+    }
     free(parser);
   }
 }

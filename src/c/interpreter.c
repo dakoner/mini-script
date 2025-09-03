@@ -608,6 +608,7 @@ Interpreter *interpreter_new(void) {
   interpreter->modules_path = NULL;
   interpreter->modules_path_count = 0;
   interpreter->return_value = NULL;
+  interpreter->current_filename = NULL;
 
   interpreter_define_builtins(interpreter);
 
@@ -624,7 +625,21 @@ void interpreter_free(Interpreter *interpreter) {
     if (interpreter->return_value) {
       value_free(interpreter->return_value);
     }
+    if (interpreter->current_filename) {
+      free(interpreter->current_filename);
+    }
     free(interpreter);
+  }
+}
+
+void interpreter_set_filename(Interpreter *interpreter, const char *filename) {
+  if (interpreter->current_filename) {
+    free(interpreter->current_filename);
+  }
+  if (filename) {
+    interpreter->current_filename = ms_strdup(filename);
+  } else {
+    interpreter->current_filename = NULL;
   }
 }
 
@@ -722,7 +737,8 @@ void interpreter_define_builtins(Interpreter *interpreter) {
 Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
                             RuntimeError **error) {
   if (!expr) {
-    *error = runtime_error_new("Null expression", 0, "<interpreter>");
+    *error = runtime_error_new("Null expression", 0, 
+                               interpreter->current_filename ? interpreter->current_filename : "<unknown>");
     return NULL;
   }
 
@@ -760,7 +776,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
 
   case EXPR_VARIABLE: {
     Value *stored_value = environment_get(interpreter->environment,
-                                          &expr->as.variable.name, error);
+                                          &expr->as.variable.name, error, 
+                                          interpreter->current_filename);
     if (*error)
       return NULL;
     return value_copy(stored_value); /* caller owns copy */
@@ -775,7 +792,7 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
     // Try to assign to existing variable first
     RuntimeError *assign_error = NULL;
     environment_assign(interpreter->environment, &expr->as.assign.name, rhs,
-                       &assign_error);
+                       &assign_error, interpreter->current_filename);
     
     if (assign_error) {
       // Variable doesn't exist, create it (implicit variable declaration)
@@ -826,7 +843,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(right);
         *error =
             runtime_error_new("Operands must be two numbers or two strings.",
-                              expr->as.binary.op.line, "<interpreter>");
+                              expr->as.binary.op.line, 
+                              interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -839,7 +857,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -852,7 +871,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -865,7 +885,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -878,7 +899,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -891,7 +913,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -904,7 +927,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -917,7 +941,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(left);
         value_free(right);
         *error = runtime_error_new("Operands must be numbers.",
-                                   expr->as.binary.op.line, "<interpreter>");
+                                   expr->as.binary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -934,7 +959,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value_free(left);
       value_free(right);
       *error = runtime_error_new("Unknown binary operator.",
-                                 expr->as.binary.op.line, "<interpreter>");
+                                 expr->as.binary.op.line, 
+                                 interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
 
@@ -958,7 +984,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value_free(object);
       value_free(index_val);
       *error =
-          runtime_error_new("Invalid index operation.", 0, "<interpreter>");
+          runtime_error_new("Invalid index operation.", 0, 
+                             interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
     long idx = (long)index_val->as.number;
@@ -966,7 +993,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
     if (idx < 0 || (size_t)idx >= object->as.list->count) {
       value_free(object);
       *error =
-          runtime_error_new("List index out of range.", 0, "<interpreter>");
+          runtime_error_new("List index out of range.", 0, 
+                             interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
     /* Return copy of element */
@@ -997,7 +1025,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value_free(object);
       value_free(index_val);
       value_free(value_rhs);
-      *error = runtime_error_new("Invalid set operation.", 0, "<interpreter>");
+      *error = runtime_error_new("Invalid set operation.", 0, 
+                                  interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
     long idx = (long)index_val->as.number;
@@ -1006,7 +1035,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value_free(object);
       value_free(value_rhs);
       *error =
-          runtime_error_new("List index out of range.", 0, "<interpreter>");
+          runtime_error_new("List index out of range.", 0, 
+                             interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
     /* Replace element */
@@ -1035,7 +1065,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
         value_free(result);
         value_free(right);
         *error = runtime_error_new("Operand must be a number.",
-                                   expr->as.unary.op.line, "<interpreter>");
+                                   expr->as.unary.op.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return NULL;
       }
       break;
@@ -1047,7 +1078,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value_free(result);
       value_free(right);
       *error = runtime_error_new("Unknown unary operator.",
-                                 expr->as.unary.op.line, "<interpreter>");
+                                 expr->as.unary.op.line, 
+                                 interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return NULL;
     }
 
@@ -1084,13 +1116,15 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
                                      arguments, expr->as.call.arguments.count);
       if (!result) {
         *error = runtime_error_new("Error calling builtin function.",
-                                   expr->as.call.paren.line, "<interpreter>");
+                                   expr->as.call.paren.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       }
     } else if (callee->type == VALUE_FUNCTION) {
       // Check parameter count
       if (expr->as.call.arguments.count != callee->as.function->declaration->as.function.param_count) {
         *error = runtime_error_new("Wrong number of arguments.",
-                                   expr->as.call.paren.line, "<interpreter>");
+                                   expr->as.call.paren.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       } else {
         // Create new environment for function scope
         Environment *previous = interpreter->environment;
@@ -1133,7 +1167,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       }
     } else {
       *error = runtime_error_new("Can only call functions and classes.",
-                                 expr->as.call.paren.line, "<interpreter>");
+                                 expr->as.call.paren.line, 
+                                 interpreter->current_filename ? interpreter->current_filename : "<unknown>");
     }
 
     // Clean up
@@ -1197,7 +1232,8 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
   }
 
   default:
-    *error = runtime_error_new("Unknown expression type.", 0, "<interpreter>");
+    *error = runtime_error_new("Unknown expression type.", 0, 
+                               interpreter->current_filename ? interpreter->current_filename : "<unknown>");
     return NULL;
   }
 }
@@ -1364,7 +1400,8 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
           value_free(msg_val);
       }
       *error =
-          runtime_error_new(msg, stmt->as.assert_stmt.keyword.line, "<assert>");
+          runtime_error_new(msg, stmt->as.assert_stmt.keyword.line, 
+                             interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return;
     }
     break;
@@ -1419,7 +1456,8 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
       if (!file) {
         free(clean_path);
         *error = runtime_error_new("Could not open import file.", 
-                                   stmt->as.import.path_token.line, "<import>");
+                                   stmt->as.import.path_token.line, 
+                                   interpreter->current_filename ? interpreter->current_filename : "<unknown>");
         return;
       }
       
@@ -1438,11 +1476,18 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
       lexer_scan_tokens(lexer);
       
       // Check if lexer encountered errors (simplified check)
-      Parser *parser = parser_new(lexer->tokens, lexer->token_count);
+      Parser *parser = parser_new(lexer->tokens, lexer->token_count, clean_path);
       StmtList statements = parser_parse(parser, error);
       
       if (!*error) {
+        // Save the current filename and set it to the imported file
+        const char *previous_filename = interpreter->current_filename;
+        interpreter_set_filename(interpreter, clean_path);
+        
         interpreter_interpret(interpreter, statements, error);
+        
+        // Restore the previous filename
+        interpreter_set_filename(interpreter, previous_filename);
       }
       
       // Cleanup statements
@@ -1457,14 +1502,16 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
       free(clean_path);
     } else {
       *error = runtime_error_new("Invalid import path format.", 
-                                 stmt->as.import.path_token.line, "<import>");
+                                 stmt->as.import.path_token.line, 
+                                 interpreter->current_filename ? interpreter->current_filename : "<unknown>");
       return;
     }
     break;
   }
 
   default:
-    *error = runtime_error_new("Unknown statement type.", 0, "<interpreter>");
+    *error = runtime_error_new("Unknown statement type.", 0, 
+                               interpreter->current_filename ? interpreter->current_filename : "<unknown>");
     break;
   }
 }

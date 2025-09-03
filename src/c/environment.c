@@ -54,7 +54,7 @@ void environment_define(Environment *env, const char *name, Value *value) {
   env->values.count++;
 }
 
-Value *environment_get(Environment *env, Token *name, RuntimeError **error) {
+Value *environment_get(Environment *env, Token *name, RuntimeError **error, const char *filename) {
   // Search current environment
   for (size_t i = 0; i < env->values.count; i++) {
     if (strcmp(env->values.keys[i], name->lexeme) == 0) {
@@ -64,18 +64,18 @@ Value *environment_get(Environment *env, Token *name, RuntimeError **error) {
 
   // Search enclosing environment
   if (env->enclosing != NULL) {
-    return environment_get(env->enclosing, name, error);
+    return environment_get(env->enclosing, name, error, filename);
   }
 
   // Variable not found
   char message[256];
   snprintf(message, sizeof(message), "Undefined variable '%s'", name->lexeme);
-  *error = runtime_error_new(message, name->line, "<unknown>");
+  *error = runtime_error_new(message, name->line, filename ? filename : "<unknown>");
   return NULL;
 }
 
 void environment_assign(Environment *env, Token *name, Value *value,
-                        RuntimeError **error) {
+                        RuntimeError **error, const char *filename) {
   // Search current environment
   for (size_t i = 0; i < env->values.count; i++) {
     if (strcmp(env->values.keys[i], name->lexeme) == 0) {
@@ -89,12 +89,12 @@ void environment_assign(Environment *env, Token *name, Value *value,
 
   // Search enclosing environment
   if (env->enclosing != NULL) {
-    environment_assign(env->enclosing, name, value, error);
+    environment_assign(env->enclosing, name, value, error, filename);
     return;
   }
 
   // Variable not found
   char message[256];
   snprintf(message, sizeof(message), "Undefined variable '%s'", name->lexeme);
-  *error = runtime_error_new(message, name->line, "<unknown>");
+  *error = runtime_error_new(message, name->line, filename ? filename : "<unknown>");
 }
