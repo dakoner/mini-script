@@ -1,4 +1,4 @@
-// math_utils.ms - A simple math utilities module
+// math_utils_module.ms - A simple math utilities module
 
 function add(a, b) {
     return a + b;
