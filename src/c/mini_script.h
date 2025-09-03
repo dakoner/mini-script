@@ -49,7 +49,7 @@ typedef enum {
   IDENTIFIER,
   STRING,
   NUMBER,
-  CHAR,
+  MS_CHAR,
 
   // Keywords
   PRINT,
@@ -78,7 +78,7 @@ typedef enum {
   NIL,
 
   EOF_TOKEN
-} TokenType;
+} MSTokenType;
 
 /* Literal value types */
 typedef enum {
@@ -86,7 +86,7 @@ typedef enum {
   LITERAL_NUMBER,
   LITERAL_INTEGER,
   LITERAL_BOOLEAN,
-  LITERAL_CHAR,
+  LITERAL_MS_CHAR,
   LITERAL_NIL
 } LiteralType;
 
@@ -104,7 +104,7 @@ typedef struct {
 
 /* Token structure */
 struct Token {
-  TokenType type;
+  MSTokenType type;
   char *lexeme;
   LiteralValue *literal;
   size_t line;
@@ -329,7 +329,7 @@ void value_free(Value *value);
 Value *value_copy(Value *value);
 
 /* Token functions */
-Token *token_new(TokenType type, const char *lexeme, LiteralValue *literal,
+Token *token_new(MSTokenType type, const char *lexeme, LiteralValue *literal,
                  size_t line);
 void token_free(Token *token);
 

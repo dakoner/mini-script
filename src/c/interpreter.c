@@ -1,5 +1,10 @@
 #include "mini_script.h"
 #include <math.h>
+#ifdef _WIN32
+  #include <windows.h>
+#else
+  #include <unistd.h>
+#endif
 
 /* Local strdup replacement */
 static char *ms_strdup(const char *s) {
@@ -316,6 +321,30 @@ static Value *builtin_time_weekday(Interpreter *interpreter, Value **args, int a
   return result;
 }
 
+static Value *builtin_sleep(Interpreter *interpreter, Value **args,
+                           int arg_count) {
+  if (arg_count != 1) {
+    return NULL;
+  }
+  
+  if (args[0]->type != VALUE_NUMBER) {
+    return NULL;
+  }
+  
+  double seconds = args[0]->as.number;
+  if (seconds < 0) {
+    return NULL;
+  }
+  
+  #ifdef _WIN32
+    Sleep((DWORD)(seconds * 1000)); // Windows Sleep takes milliseconds
+  #else
+    usleep((useconds_t)(seconds * 1000000)); // usleep takes microseconds
+  #endif
+  
+  return value_new(VALUE_NIL);
+}
+
 static Value *builtin_assert(Interpreter *interpreter, Value **args,
                             int arg_count) {
   if (arg_count < 1 || arg_count > 2) {
@@ -579,6 +608,8 @@ static Value *call_builtin_function(Interpreter *interpreter, const char *name,
     return builtin_time_second(interpreter, args, arg_count);
   } else if (strcmp(name, "time_weekday") == 0) {
     return builtin_time_weekday(interpreter, args, arg_count);
+  } else if (strcmp(name, "sleep") == 0) {
+    return builtin_sleep(interpreter, args, arg_count);
   } else if (strcmp(name, "assert") == 0) {
     return builtin_assert(interpreter, args, arg_count);
   } else if (strcmp(name, "fopen") == 0) {
@@ -700,6 +731,10 @@ void interpreter_define_builtins(Interpreter *interpreter) {
   time_weekday_builtin->as.builtin_name = ms_strdup("time_weekday");
   environment_define(interpreter->globals, "time_weekday", time_weekday_builtin);
 
+  Value *sleep_builtin = value_new(VALUE_BUILTIN);
+  sleep_builtin->as.builtin_name = ms_strdup("sleep");
+  environment_define(interpreter->globals, "sleep", sleep_builtin);
+
   Value *assert_builtin = value_new(VALUE_BUILTIN);
   assert_builtin->as.builtin_name = ms_strdup("assert");
   environment_define(interpreter->globals, "assert", assert_builtin);
@@ -764,7 +799,7 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
       value->type = VALUE_STRING;
       value->as.string = ms_strdup(expr->as.literal.value.value.string);
       break;
-    case LITERAL_CHAR:
+    case LITERAL_MS_CHAR:
       value->type = VALUE_STRING;
       value->as.string = malloc(2);
       value->as.string[0] = expr->as.literal.value.value.character;

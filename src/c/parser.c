@@ -13,7 +13,7 @@ static char *ms_strdup(const char *s) {
   return copy;
 }
 
-static bool check(Parser *parser, TokenType type) {
+static bool check(Parser *parser, MSTokenType type) {
   if (parser->current >= parser->count)
     return false;
   return parser->tokens[parser->current].type == type;
@@ -40,7 +40,7 @@ static bool match(Parser *parser, int count, ...) {
   va_start(args, count);
 
   for (int i = 0; i < count; i++) {
-    TokenType type = va_arg(args, TokenType);
+    MSTokenType type = va_arg(args, MSTokenType);
     if (check(parser, type)) {
       advance(parser);
       va_end(args);
@@ -52,7 +52,7 @@ static bool match(Parser *parser, int count, ...) {
   return false;
 }
 
-static Token *consume(Parser *parser, TokenType type, const char *message,
+static Token *consume(Parser *parser, MSTokenType type, const char *message,
                       RuntimeError **error) {
   if (check(parser, type)) {
     return advance(parser);
@@ -139,7 +139,7 @@ static Expr *primary(Parser *parser, RuntimeError **error) {
       case LITERAL_BOOLEAN:
         expr->as.literal.value.value.boolean = token->literal->value.boolean;
         break;
-      case LITERAL_CHAR:
+      case LITERAL_MS_CHAR:
         expr->as.literal.value.value.character =
             token->literal->value.character;
         break;

@@ -146,7 +146,7 @@ Value *value_copy(Value *value) {
 }
 
 /* Token functions */
-Token *token_new(TokenType type, const char *lexeme, LiteralValue *literal,
+Token *token_new(MSTokenType type, const char *lexeme, LiteralValue *literal,
                  size_t line) {
   Token *token = malloc(sizeof(Token));
   token->type = type;

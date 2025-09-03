@@ -5,7 +5,7 @@
 /* Keywords table */
 static const struct {
   const char *keyword;
-  TokenType type;
+  MSTokenType type;
 } keywords[] = {{"and", AND},
                 {"assert", ASSERT},
                 {"char", CHAR_TYPE},
@@ -34,7 +34,7 @@ static const struct {
                 {"callext", CALLEXT},
                 {NULL, EOF_TOKEN}};
 
-static TokenType get_keyword_type(const char *text) {
+static MSTokenType get_keyword_type(const char *text) {
   for (int i = 0; keywords[i].keyword != NULL; i++) {
     if (strcmp(text, keywords[i].keyword) == 0) {
       return keywords[i].type;
@@ -51,7 +51,7 @@ static bool is_alpha(char c) {
 
 static bool is_alphanumeric(char c) { return is_alpha(c) || is_digit(c); }
 
-static void add_token(Lexer *lexer, TokenType type, LiteralValue *literal) {
+static void add_token(Lexer *lexer, MSTokenType type, LiteralValue *literal) {
   if (lexer->token_count >= lexer->token_capacity) {
     lexer->token_capacity =
         lexer->token_capacity == 0 ? 8 : lexer->token_capacity * 2;
@@ -161,7 +161,7 @@ static void scan_identifier(Lexer *lexer) {
   strncpy(text, lexer->source + lexer->start, length);
   text[length] = '\0';
 
-  TokenType type = get_keyword_type(text);
+  MSTokenType type = get_keyword_type(text);
 
   LiteralValue *literal = NULL;
   if (type == TRUE) {
@@ -272,9 +272,9 @@ static void scan_token(Lexer *lexer) {
       char ch = advance(lexer);
       advance(lexer); // closing '
 
-      LiteralValue *literal = literal_new(LITERAL_CHAR);
+      LiteralValue *literal = literal_new(LITERAL_MS_CHAR);
       literal->value.character = ch;
-      add_token(lexer, CHAR, literal);
+      add_token(lexer, MS_CHAR, literal);
     }
     break;
   default:
