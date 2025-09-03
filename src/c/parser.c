@@ -599,11 +599,19 @@ static Stmt *print_statement(Parser *parser, RuntimeError **error) {
       }
     }
   }
-  consume(parser, SEMICOLON, "Expected ';' after print statement.", error);
-  if (*error) {
+  // Check if we have a semicolon or are at end of file
+  if (check(parser, SEMICOLON)) {
+    advance(parser); // consume the semicolon
+  } else if (!is_at_end(parser)) {
+    // If we're not at EOF and don't have a semicolon, that's an error
+    Token *token = &parser->tokens[parser->current];
+    *error = runtime_error_new("Expected ';' after print statement.", 
+                               token->line, 
+                               parser->filename ? parser->filename : "<unknown>");
     stmt_free(stmt);
     return NULL;
   }
+  // If we're at EOF, it's ok to not have a semicolon
   return stmt;
 }
 
@@ -631,11 +639,19 @@ static Stmt *assert_statement(Parser *parser, RuntimeError **error) {
     stmt->as.assert_stmt.message = message;
   }
 
-  consume(parser, SEMICOLON, "Expected ';' after assert statement.", error);
-  if (*error) {
+  // Check if we have a semicolon or are at end of file
+  if (check(parser, SEMICOLON)) {
+    advance(parser); // consume the semicolon
+  } else if (!is_at_end(parser)) {
+    // If we're not at EOF and don't have a semicolon, that's an error
+    Token *token = &parser->tokens[parser->current];
+    *error = runtime_error_new("Expected ';' after assert statement.", 
+                               token->line, 
+                               parser->filename ? parser->filename : "<unknown>");
     stmt_free(stmt);
     return NULL;
   }
+  // If we're at EOF, it's ok to not have a semicolon
 
   return stmt;
 }
@@ -645,11 +661,19 @@ static Stmt *expression_statement(Parser *parser, RuntimeError **error) {
   if (*error)
     return NULL;
 
-  consume(parser, SEMICOLON, "Expected ';' after expression.", error);
-  if (*error) {
+  // Check if we have a semicolon or are at end of file
+  if (check(parser, SEMICOLON)) {
+    advance(parser); // consume the semicolon
+  } else if (!is_at_end(parser)) {
+    // If we're not at EOF and don't have a semicolon, that's an error
+    Token *token = &parser->tokens[parser->current];
+    *error = runtime_error_new("Expected ';' after expression.", 
+                               token->line, 
+                               parser->filename ? parser->filename : "<unknown>");
     expr_free(expr);
     return NULL;
   }
+  // If we're at EOF, it's ok to not have a semicolon
 
   Stmt *stmt = stmt_new(STMT_EXPRESSION);
   stmt->as.expression.expression = expr;
@@ -968,11 +992,19 @@ static Stmt *var_declaration(Parser *parser, RuntimeError **error) {
       return NULL;
   }
 
-  consume(parser, SEMICOLON, "Expected ';' after variable declaration.", error);
-  if (*error) {
+  // Check if we have a semicolon or are at end of file
+  if (check(parser, SEMICOLON)) {
+    advance(parser); // consume the semicolon
+  } else if (!is_at_end(parser)) {
+    // If we're not at EOF and don't have a semicolon, that's an error
+    Token *token = &parser->tokens[parser->current];
+    *error = runtime_error_new("Expected ';' after variable declaration.", 
+                               token->line, 
+                               parser->filename ? parser->filename : "<unknown>");
     expr_free(initializer);
     return NULL;
   }
+  // If we're at EOF, it's ok to not have a semicolon
 
   Stmt *stmt = stmt_new(STMT_VAR);
   stmt->as.var.name = *name;
