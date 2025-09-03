@@ -1,7 +1,7 @@
 print("Math module loaded"); 
-function multiply(int a, int b) { 
+function multiply(a, b) { 
     return a * b; 
 } 
-function square(int x) { 
+function square(x) { 
     return x * x; 
 } 

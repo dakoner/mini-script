@@ -1,1 +1,1 @@
-import "modules/tiny_module.ms";
+import "lib/tiny_module.ms";

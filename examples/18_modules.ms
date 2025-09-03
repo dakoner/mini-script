@@ -5,7 +5,7 @@ print("=== Example 18: Module imports and organization ===");
 print("Demonstrating module organization...");
 
 // Check if we have existing modules
-print("Looking for math module in modules/ directory...");
+print("Looking for math module in lib/ directory...");
 
 // For demonstration, we'll define our own utility functions
 function calculateArea(width, height) {
