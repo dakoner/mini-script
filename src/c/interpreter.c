@@ -1477,7 +1477,8 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
     // Remove quotes from the path (it comes as "path")
     size_t path_len = strlen(path);
     if (path_len >= 2 && path[0] == '"' && path[path_len - 1] == '"') {
-      char *clean_path = malloc(path_len + 2); // Extra space for .ms
+      // Allocate enough space: path without quotes + ".ms" + null terminator
+      char *clean_path = malloc(path_len + 10); // Extra buffer to avoid overflow
       strncpy(clean_path, path + 1, path_len - 2);
       clean_path[path_len - 2] = '\0';
       
@@ -1516,13 +1517,16 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
       
       if (!*error) {
         // Save the current filename and set it to the imported file
-        const char *previous_filename = interpreter->current_filename;
+        char *previous_filename = interpreter->current_filename ? ms_strdup(interpreter->current_filename) : NULL;
         interpreter_set_filename(interpreter, clean_path);
         
         interpreter_interpret(interpreter, statements, error);
         
         // Restore the previous filename
         interpreter_set_filename(interpreter, previous_filename);
+        if (previous_filename) {
+          free(previous_filename);
+        }
       }
       
       // Cleanup statements
