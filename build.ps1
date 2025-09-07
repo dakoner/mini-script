@@ -4,7 +4,7 @@
 param(
     [switch]$Debug,
     [switch]$Verbose,
-    [string]$Compiler = "gcc"
+    [string]$Compiler = "vs"
 )
 
 # Set error action preference
@@ -99,8 +99,8 @@ function Build-WithVisualStudio {
     
     # Create temporary batch file to run vcvars and compile
     $tempBat = [System.IO.Path]::GetTempFileName() + ".bat"
-    
-    $compilerFlags = "/W1 /std:c17"
+
+    $compilerFlags = "/W1 /std:c17 /fsanitize=address"
     if ($Debug) {
         $compilerFlags += " /Zi /Od /D_DEBUG"
         Write-Info "Building DEBUG version with symbols..."
@@ -110,7 +110,6 @@ function Build-WithVisualStudio {
     }
     
     $batchContent = @"
-@echo off
 call "$VcvarsPath" >nul 2>&1
 if errorlevel 1 (
     echo Failed to set up Visual Studio environment
@@ -124,7 +123,7 @@ exit /b %errorlevel%
     
     try {
         Write-Info "Compiling with Visual Studio compiler..."
-        & cmd.exe /c $tempBat | Out-Null
+        & cmd.exe /c $tempBat
         $exitCode = $LASTEXITCODE
         
         if ($exitCode -eq 0) {
@@ -144,13 +143,13 @@ function Build-WithGCC {
     
     Write-Info "Compiling with GCC..."
     
-    $compilerFlags = "-Wall -Wextra -std=c17"
+    $compilerFlags = "-Wall -Wextra -std=c17 -fstack-protector-all -fsanitize=address -Wformat -Werror=format-security -Werror=array-bounds"
     if ($Debug) {
         $compilerFlags += " -g -O0 -DDEBUG"
         Write-Info "Building DEBUG version with symbols..."
     } else {
-        $compilerFlags += " -O2 -DNDEBUG"
-        Write-Info "Building RELEASE version with optimizations..."
+        $compilerFlags += " -O1 -DNDEBUG"  # Use -O1 instead of -O2 to reduce memory corruption risk
+        Write-Info "Building RELEASE version with optimizations and stack protection..."
     }
     
     $compileCommand = "$GccPath $compilerFlags -o mini_script.exe main.c lexer.c parser.c interpreter.c value.c environment.c"

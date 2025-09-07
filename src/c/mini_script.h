@@ -177,6 +177,7 @@ struct Stmt {
       Expr *expression;
     } expression;
     struct {
+      Token keyword;
       Expr **expressions;
       size_t count;
     } print;

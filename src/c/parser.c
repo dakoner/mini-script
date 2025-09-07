@@ -562,7 +562,9 @@ StmtList parser_parse(Parser *parser, RuntimeError **error) {
 // Implementation continues in the next part due to length...
 
 static Stmt *print_statement(Parser *parser, RuntimeError **error) {
+  Token keyword = *previous(parser); // Get the print keyword token
   Stmt *stmt = stmt_new(STMT_PRINT);
+  stmt->as.print.keyword = keyword;
   stmt->as.print.expressions = NULL;
   stmt->as.print.count = 0;
   bool has_paren = match(parser, 1, LEFT_PAREN);

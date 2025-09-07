@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "mini_script.h"
 #include <math.h>
 #ifdef _WIN32
@@ -1273,10 +1274,126 @@ Value *interpreter_evaluate(Interpreter *interpreter, Expr *expr,
   }
 }
 
+// Debug helper function to get line number from expression
+static size_t get_expr_line_number(Expr *expr) {
+  if (!expr) return 0;
+  
+  switch (expr->type) {
+    case EXPR_VARIABLE:
+      return expr->as.variable.name.line;
+    case EXPR_ASSIGN:
+      return expr->as.assign.name.line;
+    case EXPR_BINARY:
+      return expr->as.binary.op.line;
+    case EXPR_LOGICAL:
+      return expr->as.logical.op.line;
+    case EXPR_UNARY:
+      return expr->as.unary.op.line;
+    case EXPR_CALL:
+      return expr->as.call.paren.line;
+    case EXPR_GROUPING:
+      return get_expr_line_number(expr->as.grouping.expression);
+    case EXPR_GET:
+      return get_expr_line_number(expr->as.get.object);
+    case EXPR_SET:
+      return get_expr_line_number(expr->as.set.object);
+    case EXPR_LITERAL:
+      // For literals, we can't get line info from the expression itself
+      // This is a limitation - literals don't store their original token line
+      return 0;
+    case EXPR_LIST_LITERAL:
+      // For list literals, try the first element
+      if (expr->as.list_literal.elements.count > 0 && expr->as.list_literal.elements.expressions[0]) {
+        return get_expr_line_number(expr->as.list_literal.elements.expressions[0]);
+      }
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+// Debug helper function to get line number from statement
+static size_t get_stmt_line_number(Stmt *stmt) {
+  switch (stmt->type) {
+    case STMT_VAR:
+      return stmt->as.var.name.line;
+    case STMT_IMPORT:
+      return stmt->as.import.path_token.line;
+    case STMT_RETURN:
+      return stmt->as.return_stmt.keyword.line;
+    case STMT_ASSERT:
+      return stmt->as.assert_stmt.keyword.line;
+    case STMT_FUNCTION:
+      return stmt->as.function.name.line;
+    case STMT_EXPRESSION:
+      return get_expr_line_number(stmt->as.expression.expression);
+    case STMT_PRINT:
+      return stmt->as.print.keyword.line;
+    default:
+      return 0; // Unknown line for other statements
+  }
+}
+
+// Debug helper function to read a specific line from a file
+static char* read_line_from_file(const char *filename, size_t line_number) {
+  if (!filename || line_number == 0) return NULL;
+  
+  FILE *file = fopen(filename, "r");
+  if (!file) return NULL;
+  
+  char buffer[1024];
+  size_t current_line = 0;
+  
+  while (fgets(buffer, sizeof(buffer), file)) {
+    current_line++;
+    if (current_line == line_number) {
+      fclose(file);
+      // Remove trailing newline if present
+      size_t len = strlen(buffer);
+      if (len > 0 && buffer[len-1] == '\n') {
+        buffer[len-1] = '\0';
+      }
+      if (len > 1 && buffer[len-2] == '\r') {
+        buffer[len-2] = '\0';
+      }
+      // Create a copy to return
+      char *result = malloc(strlen(buffer) + 1);
+      strcpy(result, buffer);
+      return result;
+    }
+  }
+  
+  fclose(file);
+  return NULL;
+}
+
 void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
                          RuntimeError **error) {
   if (!stmt)
     return;
+
+// Debug: Print statement type being executed (always enabled for debugging)
+  const char *stmt_type_names[] = {
+    "BLOCK", "EXPRESSION", "PRINT", "FUNCTION", "FOR", 
+    "IF", "RETURN", "WHILE", "IMPORT", "ASSERT", "VAR"
+  };
+  
+  size_t line_num = get_stmt_line_number(stmt);
+  const char *filename = interpreter->current_filename ? interpreter->current_filename : "<unknown>";
+  
+  if (stmt->type >= 0 && stmt->type < sizeof(stmt_type_names)/sizeof(stmt_type_names[0])) {
+    if (line_num > 0) {
+      char *source_line = read_line_from_file(filename, line_num);
+      if (source_line) {
+        printf("[DEBUG] %s:%zu: %s | %s\n", filename, line_num, stmt_type_names[stmt->type], source_line);
+        free(source_line);
+      } else {
+        printf("[DEBUG] %s:%zu: %s\n", filename, line_num, stmt_type_names[stmt->type]);
+      }
+    } else {
+      printf("[DEBUG] %s: %s\n", filename, stmt_type_names[stmt->type]);
+    }
+  }
 
   switch (stmt->type) {
   case STMT_EXPRESSION: {
@@ -1316,6 +1433,8 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
     } else {
       value = value_new(VALUE_NIL);
     }
+
+    printf("[DEBUG] Defining variable: %s\n", stmt->as.var.name.lexeme);
 
     environment_define(interpreter->environment, stmt->as.var.name.lexeme,
                        value);
@@ -1474,6 +1593,8 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
     // The path should be a string literal from the import statement
     const char *path = stmt->as.import.path_token.lexeme;
     
+    printf("[DEBUG] Importing file: %s\n", path);
+    
     // Remove quotes from the path (it comes as "path")
     size_t path_len = strlen(path);
     if (path_len >= 2 && path[0] == '"' && path[path_len - 1] == '"') {
@@ -1482,10 +1603,14 @@ void interpreter_execute(Interpreter *interpreter, Stmt *stmt,
       strncpy(clean_path, path + 1, path_len - 2);
       clean_path[path_len - 2] = '\0';
       
+      printf("[DEBUG] Clean import path: %s\n", clean_path);
+      
       // Add .ms extension if not present
       if (strlen(clean_path) < 3 || strcmp(clean_path + strlen(clean_path) - 3, ".ms") != 0) {
         strcat(clean_path, ".ms");
       }
+      
+      printf("[DEBUG] Final import path: %s\n", clean_path);
       
       // Load and execute the imported file
       FILE *file = fopen(clean_path, "r");
