@@ -1,0 +1,95 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Mini Script (REPL)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Run File)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": ["${input:scriptFile}"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Current File)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": ["${file}"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Test 1 - Arithmetic)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": ["${workspaceFolder}/examples/1_arithmetic.ms"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Import Test)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": ["${workspaceFolder}/examples/test_imports.ms"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Module Import Test)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/c/mini_script.exe",
+            "args": ["${workspaceFolder}/tests/test_16_module_import.ms"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Mini Script Debug (Visual Studio)"
+        },
+        {
+            "name": "Debug Mini Script (Attach to Process)",
+            "type": "cppvsdbg",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "symbolSearchPath": "${workspaceFolder}/src/c"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "scriptFile",
+            "description": "Enter the script file to debug",
+            "default": "examples/1_arithmetic.ms",
+            "type": "promptString"
+        }
+    ]
+}

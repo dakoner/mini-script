@@ -1,0 +1,171 @@
+{
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "Build Mini Script (Visual Studio)",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cl /W1 /std:c17 /O2 /DNDEBUG /Fe:mini_script.exe main.c lexer.c parser.c interpreter.c value.c environment.c"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/c",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": ["/d", "/c"]
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Build mini_script.exe using Visual Studio compiler with vcvars64"
+        },
+        {
+            "type": "shell",
+            "label": "Build Mini Script Debug (Visual Studio)",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cl /W1 /std:c17 /Zi /O2 /D_DEBUG /Fe:mini_script.exe main.c lexer.c parser.c interpreter.c value.c environment.c"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/c",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": ["/d", "/c"]
+                }
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Build mini_script.exe in debug mode using Visual Studio compiler with vcvars64"
+        },
+        {
+            "type": "cppbuild",
+            "label": "Build Mini Script (GCC)",
+            "command": "gcc",
+            "args": [
+                "-Wall",
+                "-Wextra",
+                "-std=c17",
+                "-fstack-protector-all",
+                "-O1",
+                "-DNDEBUG",
+                "-o",
+                "mini_script.exe",
+                "main.c",
+                "lexer.c",
+                "parser.c",
+                "interpreter.c",
+                "value.c",
+                "environment.c"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/c"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build mini_script.exe using GCC compiler with stack protection"
+        },
+        {
+            "type": "cppbuild",
+            "label": "Build Mini Script Debug (GCC)",
+            "command": "gcc",
+            "args": [
+                "-Wall",
+                "-Wextra",
+                "-std=c17",
+                "-fstack-protector-all",
+                "-g",
+                "-O0",
+                "-DDEBUG",
+                "-o",
+                "mini_script.exe",
+                "main.c",
+                "lexer.c",
+                "parser.c",
+                "interpreter.c",
+                "value.c",
+                "environment.c"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/src/c"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build mini_script.exe in debug mode using GCC compiler"
+        },
+        {
+            "type": "shell",
+            "label": "Run Tests",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "& '.\\src\\c\\mini_script.exe' --help 2>$null; if ($LASTEXITCODE -eq 74) { Write-Host 'Testing mini_script.exe...'; Get-ChildItem '.\\tests\\test_*.ms' | ForEach-Object { Write-Host \"Running $($_.Name)...\"; & '.\\src\\c\\mini_script.exe' $_.FullName } } else { Write-Host 'mini_script.exe not found or not working' }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "problemMatcher": [],
+            "detail": "Run Mini Script tests"
+        },
+        {
+            "type": "shell",
+            "label": "Build Rust Version",
+            "command": "cargo",
+            "args": [
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Build the Rust implementation of Mini Script"
+        },
+        {
+            "type": "shell",
+            "label": "Build Rust Version (Release)",
+            "command": "cargo",
+            "args": [
+                "build",
+                "--release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Build the Rust implementation in release mode"
+        },
+        {
+            "type": "shell",
+            "label": "Clean Build",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "Remove-Item -Recurse -Force src/c/*.exe, src/c/*.obj, src/c/*.pdb, src/c/*.ilk -ErrorAction SilentlyContinue; Write-Host 'Build artifacts cleaned'"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "detail": "Clean build artifacts"
+        }
+    ],
+    "version": "2.0.0"
+}
